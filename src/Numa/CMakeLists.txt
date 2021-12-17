@@ -5,9 +5,11 @@ target_sources(
     Fitting.h
     Derivative.h
     Integral.h
-    
+    FFT.h
+
     PRIVATE
     Fitting.cpp
     Derivative.cpp
     Integral.cpp
+    FFT.cpp
     )
