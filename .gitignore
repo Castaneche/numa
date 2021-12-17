@@ -1,0 +1,11 @@
+#Folders
+out/
+.vs/
+
+#Do not ignore makefiles
+!CMakeLists.txt
+!CMakeSettings.json
+
+#Custom
+Analysis.*
+temp
