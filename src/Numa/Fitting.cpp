@@ -15,17 +15,9 @@ namespace numa {
 
 	namespace fit {
 
-		static struct data {
-			size_t n;
-			double* t;
-			double* y;
-		};
-
-		static int exp_f(const gsl_vector* x, void* data, gsl_vector* f)
+		static int exp_f(const gsl_vector* x, void* params, gsl_vector* f)
 		{
-			size_t n = ((struct data*)data)->n;
-			double* t = ((struct data*)data)->t;
-			double* y = ((struct data*)data)->y;
+			Data data = (struct Data&)params;
 
 			double A = gsl_vector_get(x, 0);
 			double lambda = gsl_vector_get(x, 1);
@@ -33,35 +25,34 @@ namespace numa {
 
 			size_t i;
 
-			for (i = 0; i < n; i++)
+			for (i = 0; i < data.x.size(); i++)
 			{
 				/* Model Yi = A * exp(-lambda * t_i) + b */
-				double Yi = A * exp(-lambda * t[i]) + b;
-				gsl_vector_set(f, i, Yi - y[i]);
+				double Yi = A * exp(-lambda * data.x[i]) + b;
+				gsl_vector_set(f, i, Yi - data.y[i]);
 			}
 
 			return GSL_SUCCESS;
 		}
 
-		static int	exp_df(const gsl_vector* x, void* data, gsl_matrix* J)
+		static int	exp_df(const gsl_vector* x, void* params, gsl_matrix* J)
 		{
-			size_t n = ((struct data*)data)->n;
-			double* t = ((struct data*)data)->t;
+			Data data = (struct Data&)params;
 
 			double A = gsl_vector_get(x, 0);
 			double lambda = gsl_vector_get(x, 1);
 
 			size_t i;
 
-			for (i = 0; i < n; i++)
+			for (i = 0; i < data.x.size(); i++)
 			{
 				/* Jacobian matrix J(i,j) = dfi / dxj, */
 				/* where fi = (Yi - yi)/sigma[i],      */
 				/*       Yi = A * exp(-lambda * t_i) + b  */
 				/* and the xj are the parameters (A,lambda,b) */
-				double e = exp(-lambda * t[i]);
+				double e = exp(-lambda * data.x[i]);
 				gsl_matrix_set(J, i, 0, e);
-				gsl_matrix_set(J, i, 1, -t[i] * A * e);
+				gsl_matrix_set(J, i, 1, -data.x[i] * A * e);
 				gsl_matrix_set(J, i, 2, 1.0);
 			}
 
@@ -69,11 +60,9 @@ namespace numa {
 		}
 
 
-		static int sin_f(const gsl_vector* x, void* data, gsl_vector* f)
+		static int sin_f(const gsl_vector* x, void* params, gsl_vector* f)
 		{
-			size_t n = ((struct data*)data)->n;
-			double* t = ((struct data*)data)->t;
-			double* y = ((struct data*)data)->y;
+			Data data = (struct Data&)params;
 
 			double A = gsl_vector_get(x, 0);
 			double omega = gsl_vector_get(x, 1);
@@ -81,20 +70,19 @@ namespace numa {
 
 			size_t i;
 
-			for (i = 0; i < n; i++)
+			for (i = 0; i < data.x.size(); i++)
 			{
 				/* Model Yi = A * sin(omega * t_i + phi) */
-				double Yi = A * sin(omega * t[i] + phi);
-				gsl_vector_set(f, i, Yi - y[i]);
+				double Yi = A * sin(omega * data.x[i] + phi);
+				gsl_vector_set(f, i, Yi - data.y[i]);
 			}
 
 			return GSL_SUCCESS;
 		}
 
-		static int sin_df(const gsl_vector* x, void* data, gsl_matrix* J)
+		static int sin_df(const gsl_vector* x, void* params, gsl_matrix* J)
 		{
-			size_t n = ((struct data*)data)->n;
-			double* t = ((struct data*)data)->t;
+			Data data = (struct Data&)params;
 
 			double A = gsl_vector_get(x, 0);
 			double omega = gsl_vector_get(x, 1);
@@ -102,15 +90,15 @@ namespace numa {
 
 			size_t i;
 
-			for (i = 0; i < n; i++)
+			for (i = 0; i < data.x.size(); i++)
 			{
 				/* Jacobian matrix J(i,j) = dfi / dxj, */
 				/* where fi = (Yi - yi)/sigma[i],      */
 				/*       Yi = A * sin(omega * t_i + phi)  */
 				/* and the xj are the parameters (A,omega,phi) */
-				gsl_matrix_set(J, i, 0, sin(omega * t[i] + phi));
-				gsl_matrix_set(J, i, 1, A * t[i] * cos(omega * t[i] + phi));
-				gsl_matrix_set(J, i, 2, A * cos(omega * t[i] + phi));
+				gsl_matrix_set(J, i, 0, sin(omega * data.x[i] + phi));
+				gsl_matrix_set(J, i, 1, A * data.x[i] * cos(omega * data.x[i] + phi));
+				gsl_matrix_set(J, i, 2, A * cos(omega * data.x[i] + phi));
 			}
 
 			return GSL_SUCCESS;
@@ -128,7 +116,7 @@ namespace numa {
 			/* compute reciprocal condition number of J(x) */
 			gsl_multifit_nlinear_rcond(&rcond, w);
 
-			fprintf(stderr, "iter %2zu: A = %.4f, lambda = %.4f, b = %.4f, cond(J) = %8.4f, |f(x)| = %.4f\n",
+			fprintf(stderr, "iter %2zu: x1 = %.4f, x2 = %.4f, x3 = %.4f, cond(J) = %8.4f, |f(x)| = %.4f\n",
 				iter,
 				gsl_vector_get(x, 0),
 				gsl_vector_get(x, 1),
@@ -156,8 +144,9 @@ namespace numa {
 			return r;
 		}*/
 
-		int linear(std::vector<double>& x, std::vector<double>& y, double* c0, double* c1, std::string& result)
+		void linear(const std::vector<double>& x, const std::vector<double>& y, double* c0, double* c1, std::string& result)
 		{
+
 			double cov00, cov01, cov11, sumsq;
 			int r = gsl_fit_linear(&x[0], 1, &y[0], 1, x.size(), c0, c1, &cov00, &cov01, &cov11, &sumsq);
 			double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
@@ -168,11 +157,9 @@ namespace numa {
 				+ " cov11 : " + std::to_string(cov11) + "\n"
 				+ " sumsq : " + std::to_string(sumsq) + "\n"
 				+ " correlation : " + std::to_string(correlation) + "\n";
-
-			return r;
 		}
 
-		int polynomial(std::vector<double>& x, std::vector<double>& y, double& c0, double& c1, double& c2, std::string& result)
+		void polynomial(std::vector<double>& x, std::vector<double>& y, double& c0, double& c1, double& c2, std::string& result)
 		{
 			//variables
 			int n;
@@ -226,50 +213,55 @@ namespace numa {
 			//gsl_vector_free(w);
 			gsl_vector_free(C);
 			gsl_matrix_free(cov);
-
-			return r;
 		}
 
-		int exponential(std::vector<double>& x, std::vector<double>& y, double& b, double& lambda, double& A)
+		static struct Params {
+			int (*f) (const gsl_vector* x, void* params, gsl_vector* f);
+			int (*df) (const gsl_vector* x, void* params, gsl_matrix* df);
+			int p; //number of paremeters of the fitting function
+			std::vector<double> startvalues; 
+			double xtol = 1e-8;
+			double gtol = 1e-8;
+			double ftol = 0.0;
+		};
+
+		//Return an array filled with adjusted parameters
+		static std::vector<double> non_linear_fitting(const std::vector<double>& x, const std::vector<double>& y, Params params)
 		{
+			std::vector<double> variables; //Array of adjusted parameters. It will be returned at the end
+
 			const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
 			gsl_multifit_nlinear_workspace* w;
 			gsl_multifit_nlinear_fdf fdf;
-			gsl_multifit_nlinear_parameters fdf_params =
-				gsl_multifit_nlinear_default_parameters();
+			gsl_multifit_nlinear_parameters fdf_params = gsl_multifit_nlinear_default_parameters();
 			const size_t n = y.size();
-			const size_t p = 3;
+			const size_t p = params.p;
 
 			gsl_vector* f;
 			gsl_matrix* J;
 			gsl_matrix* covar = gsl_matrix_alloc(p, p);
 			std::vector<double> weights;
 			weights.resize(n);
-			struct data d = { n, x.data(), y.data() };
-			double x_init[3] = { 1.0, 1.0, 0.0 }; /* starting values */
-			gsl_vector_view xx = gsl_vector_view_array(x_init, p);
+			struct Data data = { x, y };
+			gsl_vector_view xx = gsl_vector_view_array(params.startvalues.data(), p);
 			gsl_vector_view wts = gsl_vector_view_array(weights.data(), n);
 			gsl_rng* r;
 			double chisq, chisq0;
 			int status, info;
 			size_t i;
 
-			const double xtol = 1e-8;
-			const double gtol = 1e-8;
-			const double ftol = 0.0;
-
 			gsl_rng_env_setup();
 			r = gsl_rng_alloc(gsl_rng_default);
 
 			/* define the function to be minimized */
-			fdf.f = exp_f;
-			fdf.df = exp_df;   /* set to NULL for finite-difference Jacobian */
+			fdf.f = params.f;
+			fdf.df = params.df;   /* set to NULL for finite-difference Jacobian */
 			fdf.fvv = NULL;     /* not using geodesic acceleration */
 			fdf.n = n;
 			fdf.p = p;
-			fdf.params = &d;
+			fdf.params = &data;
 
-			/* this is the data to be fitted */
+			/* set the weights */
 			for (i = 0; i < n; i++)
 			{
 				double si = 0.1 * y[i];
@@ -287,7 +279,7 @@ namespace numa {
 			gsl_blas_ddot(f, f, &chisq0);
 
 			/* solve the system with a maximum of 100 iterations */
-			status = gsl_multifit_nlinear_driver(100, xtol, gtol, ftol,
+			status = gsl_multifit_nlinear_driver(100, params.xtol, params.xtol, params.xtol,
 				callback, NULL, &info, w);
 
 			/* compute covariance of best fit parameters */
@@ -318,129 +310,44 @@ namespace numa {
 
 				fprintf(stderr, "chisq/dof = %g\n", chisq / dof);
 
-				fprintf(stderr, "A      = %.5f +/- %.5f\n", FIT(0), c * ERR(0));
-				fprintf(stderr, "lambda = %.5f +/- %.5f\n", FIT(1), c * ERR(1));
-				fprintf(stderr, "b      = %.5f +/- %.5f\n", FIT(2), c * ERR(2));
+				fprintf(stderr, "variable 1 = %.5f +/- %.5f\n", FIT(0), c * ERR(0));
+				fprintf(stderr, "variable 2 = %.5f +/- %.5f\n", FIT(1), c * ERR(1));
+				fprintf(stderr, "variable 3 = %.5f +/- %.5f\n", FIT(2), c * ERR(2));
 			}
 
 			fprintf(stderr, "status = %s\n", gsl_strerror(status));
 
-			A = FIT(0);
-			lambda = FIT(1);
-			b = FIT(2);
+			for(unsigned int k = 0; k < params.p; k++)
+				variables.push_back(FIT(k));
 
 			gsl_multifit_nlinear_free(w);
 			gsl_matrix_free(covar);
 			gsl_rng_free(r);
 
-			return 0;
+			return variables;
+		}
+
+		void exponential(const std::vector<double>& x, const std::vector<double>& y, double& b, double& lambda, double& A)
+		{
+			Params params = { exp_f, exp_df, 3, {1.0, 1.0, 0.0} };
+
+			std::vector<double> vars = non_linear_fitting(x, y, params);
+
+			b = vars[2];
+			lambda = vars[1];
+			A = vars[0];
 		}
 
 
-		int sinus(std::vector<double>& x, std::vector<double>& y, double& phi, double& omega, double& A)
+		void sinus(const std::vector<double>& x, const std::vector<double>& y, double& phi, double& omega, double& A)
 		{
-			const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
-			gsl_multifit_nlinear_workspace* w;
-			gsl_multifit_nlinear_fdf fdf;
-			gsl_multifit_nlinear_parameters fdf_params =
-				gsl_multifit_nlinear_default_parameters();
-			const size_t n = y.size();
-			const size_t p = 3;
+			Params params = { sin_f, sin_df, 3, {1.0, 1.0, 0.0} };
 
-			gsl_vector* f;
-			gsl_matrix* J;
-			gsl_matrix* covar = gsl_matrix_alloc(p, p);
-			std::vector<double> weights;
-			weights.resize(n);
-			struct data d = { n, x.data(), y.data() };
-			double x_init[3] = { 1.0, 2 * M_PI * 10, 0.0 }; /* starting values */
-			gsl_vector_view xx = gsl_vector_view_array(x_init, p);
-			gsl_vector_view wts = gsl_vector_view_array(weights.data(), n);
-			gsl_rng* r;
-			double chisq, chisq0;
-			int status, info;
-			size_t i;
+			std::vector<double> vars = non_linear_fitting(x, y, params);
 
-			const double xtol = 1e-8;
-			const double gtol = 1e-8;
-			const double ftol = 0.0;
-
-			gsl_rng_env_setup();
-			r = gsl_rng_alloc(gsl_rng_default);
-
-			/* define the function to be minimized */
-			fdf.f = sin_f;
-			fdf.df = sin_df;   /* set to NULL for finite-difference Jacobian */
-			fdf.fvv = NULL;     /* not using geodesic acceleration */
-			fdf.n = n;
-			fdf.p = p;
-			fdf.params = &d;
-
-			/* this is the data to be fitted */
-			for (i = 0; i < n; i++)
-			{
-				double si = 0.1 * y[i];
-				weights[i] = 1.0 / (si * si);
-			};
-
-			/* allocate workspace with default parameters */
-			w = gsl_multifit_nlinear_alloc(T, &fdf_params, n, p);
-
-			/* initialize solver with starting point and weights */
-			gsl_multifit_nlinear_winit(&xx.vector, &wts.vector, &fdf, w);
-
-			/* compute initial cost function */
-			f = gsl_multifit_nlinear_residual(w);
-			gsl_blas_ddot(f, f, &chisq0);
-
-			/* solve the system with a maximum of 100 iterations */
-			status = gsl_multifit_nlinear_driver(100, xtol, gtol, ftol,
-				callback, NULL, &info, w);
-
-			/* compute covariance of best fit parameters */
-			J = gsl_multifit_nlinear_jac(w);
-			gsl_multifit_nlinear_covar(J, 0.0, covar);
-
-			/* compute final cost */
-			gsl_blas_ddot(f, f, &chisq);
-
-#define FIT(i) gsl_vector_get(w->x, i)
-#define ERR(i) sqrt(gsl_matrix_get(covar,i,i))
-
-			fprintf(stderr, "summary from method '%s/%s'\n",
-				gsl_multifit_nlinear_name(w),
-				gsl_multifit_nlinear_trs_name(w));
-			fprintf(stderr, "number of iterations: %zu\n",
-				gsl_multifit_nlinear_niter(w));
-			fprintf(stderr, "function evaluations: %zu\n", fdf.nevalf);
-			fprintf(stderr, "Jacobian evaluations: %zu\n", fdf.nevaldf);
-			fprintf(stderr, "reason for stopping: %s\n",
-				(info == 1) ? "small step size" : "small gradient");
-			fprintf(stderr, "initial |f(x)| = %f\n", sqrt(chisq0));
-			fprintf(stderr, "final   |f(x)| = %f\n", sqrt(chisq));
-
-			{
-				double dof = n - p;
-				double c = GSL_MAX_DBL(1, sqrt(chisq / dof));
-
-				fprintf(stderr, "chisq/dof = %g\n", chisq / dof);
-
-				fprintf(stderr, "A      = %.5f +/- %.5f\n", FIT(0), c * ERR(0));
-				fprintf(stderr, "omega = %.5f +/- %.5f\n", FIT(1), c * ERR(1));
-				fprintf(stderr, "phi      = %.5f +/- %.5f\n", FIT(2), c * ERR(2));
-			}
-
-			fprintf(stderr, "status = %s\n", gsl_strerror(status));
-
-			A = FIT(0);
-			omega = FIT(1);
-			phi = FIT(2);
-
-			gsl_multifit_nlinear_free(w);
-			gsl_matrix_free(covar);
-			gsl_rng_free(r);
-
-			return 0;
+			phi = vars[2];
+			omega = vars[1];
+			A = vars[0];
 		}
 
 
