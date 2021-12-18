@@ -17,7 +17,7 @@ namespace numa {
 
 		static int exp_f(const gsl_vector* x, void* params, gsl_vector* f)
 		{
-			Data data = (struct Data&)params;
+			auto data = (struct Data*)params;
 
 			double A = gsl_vector_get(x, 0);
 			double lambda = gsl_vector_get(x, 1);
@@ -25,11 +25,11 @@ namespace numa {
 
 			size_t i;
 
-			for (i = 0; i < data.x.size(); i++)
+			for (i = 0; i < data->x.size(); i++)
 			{
 				/* Model Yi = A * exp(-lambda * t_i) + b */
-				double Yi = A * exp(-lambda * data.x[i]) + b;
-				gsl_vector_set(f, i, Yi - data.y[i]);
+				double Yi = A * exp(-lambda * data->x[i]) + b;
+				gsl_vector_set(f, i, Yi - data->y[i]);
 			}
 
 			return GSL_SUCCESS;
@@ -37,22 +37,22 @@ namespace numa {
 
 		static int	exp_df(const gsl_vector* x, void* params, gsl_matrix* J)
 		{
-			Data data = (struct Data&)params;
+			auto data = (struct Data*)params;
 
 			double A = gsl_vector_get(x, 0);
 			double lambda = gsl_vector_get(x, 1);
 
 			size_t i;
 
-			for (i = 0; i < data.x.size(); i++)
+			for (i = 0; i < data->x.size(); i++)
 			{
 				/* Jacobian matrix J(i,j) = dfi / dxj, */
 				/* where fi = (Yi - yi)/sigma[i],      */
 				/*       Yi = A * exp(-lambda * t_i) + b  */
 				/* and the xj are the parameters (A,lambda,b) */
-				double e = exp(-lambda * data.x[i]);
+				double e = exp(-lambda * data->x[i]);
 				gsl_matrix_set(J, i, 0, e);
-				gsl_matrix_set(J, i, 1, -data.x[i] * A * e);
+				gsl_matrix_set(J, i, 1, -data->x[i] * A * e);
 				gsl_matrix_set(J, i, 2, 1.0);
 			}
 
@@ -62,7 +62,7 @@ namespace numa {
 
 		static int sin_f(const gsl_vector* x, void* params, gsl_vector* f)
 		{
-			Data data = (struct Data&)params;
+			auto data = (struct Data*)params;
 
 			double A = gsl_vector_get(x, 0);
 			double omega = gsl_vector_get(x, 1);
@@ -70,11 +70,11 @@ namespace numa {
 
 			size_t i;
 
-			for (i = 0; i < data.x.size(); i++)
+			for (i = 0; i < data->x.size(); i++)
 			{
-				/* Model Yi = A * sin(omega * t_i + phi) */
-				double Yi = A * sin(omega * data.x[i] + phi);
-				gsl_vector_set(f, i, Yi - data.y[i]);
+				// Model Yi = A * sin(omega * t_i + phi) 
+				double Yi = A * sin(omega * data->x[i] + phi);
+				gsl_vector_set(f, i, Yi - data->y[i]);
 			}
 
 			return GSL_SUCCESS;
@@ -82,7 +82,7 @@ namespace numa {
 
 		static int sin_df(const gsl_vector* x, void* params, gsl_matrix* J)
 		{
-			Data data = (struct Data&)params;
+			auto data = (struct Data*)params;
 
 			double A = gsl_vector_get(x, 0);
 			double omega = gsl_vector_get(x, 1);
@@ -90,15 +90,15 @@ namespace numa {
 
 			size_t i;
 
-			for (i = 0; i < data.x.size(); i++)
+			for (i = 0; i < data->x.size(); i++)
 			{
 				/* Jacobian matrix J(i,j) = dfi / dxj, */
 				/* where fi = (Yi - yi)/sigma[i],      */
 				/*       Yi = A * sin(omega * t_i + phi)  */
 				/* and the xj are the parameters (A,omega,phi) */
-				gsl_matrix_set(J, i, 0, sin(omega * data.x[i] + phi));
-				gsl_matrix_set(J, i, 1, A * data.x[i] * cos(omega * data.x[i] + phi));
-				gsl_matrix_set(J, i, 2, A * cos(omega * data.x[i] + phi));
+				gsl_matrix_set(J, i, 0, sin(omega * data->x[i] + phi));
+				gsl_matrix_set(J, i, 1, A * data->x[i] * cos(omega * data->x[i] + phi));
+				gsl_matrix_set(J, i, 2, A * cos(omega * data->x[i] + phi));
 			}
 
 			return GSL_SUCCESS;
