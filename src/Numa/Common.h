@@ -5,6 +5,10 @@
 
 namespace numa {
 
+	struct Data {
+		std::vector<double> x;
+		std::vector<double> y;
+	};
 	//Generate an array of values spaced evenly
 	std::vector<double> linspace(double start, double stop, int N);
 	//Generate an array of values spaced evenly
