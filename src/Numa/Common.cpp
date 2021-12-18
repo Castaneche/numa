@@ -10,7 +10,7 @@ namespace numa {
 		}
 
 		std::vector<double> arr;
-		int step = (stop - start) / N;
+		double step = (stop - start) / (double)N;
 		for (double x = start; x < stop; x += step)
 			arr.push_back(x);
 
