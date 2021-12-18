@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Common.h"
+
 #include <vector>
 #include <memory>
 
@@ -10,7 +12,7 @@ namespace numa {
 
 		//Perform fft on data. 
 		//WARNING : input data will be modified
-		void spectrum(std::vector<double>& xdata, std::vector<double>& ydata, Window windowFunction = Window::None);
+		Data spectrum(const std::vector<double>& xdata, const std::vector<double>& ydata, Window windowFunction = Window::None);
 
 		//Window functions 
 		// https://matthieu-brucher.developpez.com/tutoriels/algo/fft/#LII-B
