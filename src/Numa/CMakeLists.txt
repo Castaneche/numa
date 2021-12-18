@@ -6,10 +6,12 @@ target_sources(
     Derivative.h
     Integral.h
     FFT.h
+    Common.h
 
     PRIVATE
     Fitting.cpp
     Derivative.cpp
     Integral.cpp
     FFT.cpp
+    Common.cpp
     )
