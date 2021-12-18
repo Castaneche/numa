@@ -30,6 +30,16 @@ namespace numa {
 
 		return arr;
 	}
+	std::vector<double> arange(double start, int N, double step)
+	{
+		std::vector<double> arr;
+		for (unsigned int i = 0; i < N; i++) {
+			double x = start + i * step;
+			arr.push_back(x);
+		}
+
+		return arr;
+	}
 	std::vector<double> genarray(double start, double end, int N, std::function<double(double)> mathfunction)
 	{
 		std::vector<double> x = linspace(start, end, N);
