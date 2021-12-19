@@ -1,5 +1,7 @@
 #include "Fitting.h"
 
+#include <assert.h>
+
 #include <gsl/gsl_fit.h>
 #include <gsl/gsl_multifit.h>
 #include <gsl/gsl_statistics.h>
@@ -96,7 +98,7 @@ namespace numa {
 				/* where fi = (Yi - yi)/sigma[i],      */
 				/*       Yi = A * sin(omega * t_i + phi)  */
 				/* and the xj are the parameters (A,omega,phi) */
-				gsl_matrix_set(J, i, 0, sin(omega * data->x[i] + phi));
+				gsl_matrix_set(J, i, 0, sin(omega * data->x[i]));
 				gsl_matrix_set(J, i, 1, A * data->x[i] * cos(omega * data->x[i] + phi));
 				gsl_matrix_set(J, i, 2, A * cos(omega * data->x[i] + phi));
 			}
@@ -217,22 +219,22 @@ namespace numa {
 
 		static struct Params {
 			int (*f) (const gsl_vector* x, void* params, gsl_vector* f);
-			int (*df) (const gsl_vector* x, void* params, gsl_matrix* df);
-			int p; //number of paremeters of the fitting function
+			int (*df) (const gsl_vector* x, void* params, gsl_matrix* df);/* set to NULL for finite-difference Jacobian */
+			int p; //number of parameters of the fitting function
 			std::vector<double> startvalues; 
 			double xtol = 1e-8;
 			double gtol = 1e-8;
-			double ftol = 0.0;
+			double ftol = 1e-8;
 		};
 
 		//Return an array filled with adjusted parameters
-		static std::vector<double> non_linear_fitting(const std::vector<double>& x, const std::vector<double>& y, Params params)
+		std::vector<double> non_linear_fitting(const std::vector<double>& x, const std::vector<double>& y, Params& params)
 		{
 			std::vector<double> variables; //Array of adjusted parameters. It will be returned at the end
 
 			const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
 			gsl_multifit_nlinear_workspace* w;
-			gsl_multifit_nlinear_fdf fdf;
+			gsl_multifit_nlinear_fdf fdf = gsl_multifit_nlinear_fdf();
 			gsl_multifit_nlinear_parameters fdf_params = gsl_multifit_nlinear_default_parameters();
 			const size_t n = y.size();
 			const size_t p = params.p;
@@ -240,18 +242,12 @@ namespace numa {
 			gsl_vector* f;
 			gsl_matrix* J;
 			gsl_matrix* covar = gsl_matrix_alloc(p, p);
-			std::vector<double> weights;
-			weights.resize(n);
+
 			struct Data data = { x, y };
 			gsl_vector_view xx = gsl_vector_view_array(params.startvalues.data(), p);
-			gsl_vector_view wts = gsl_vector_view_array(weights.data(), n);
-			gsl_rng* r;
 			double chisq, chisq0;
 			int status, info;
 			size_t i;
-
-			gsl_rng_env_setup();
-			r = gsl_rng_alloc(gsl_rng_default);
 
 			/* define the function to be minimized */
 			fdf.f = params.f;
@@ -261,18 +257,13 @@ namespace numa {
 			fdf.p = p;
 			fdf.params = &data;
 
-			/* set the weights */
-			for (i = 0; i < n; i++)
-			{
-				double si = 0.1 * y[i];
-				weights[i] = 1.0 / (si * si);
-			};
+			//We do not use weights here because all points are equally weighted
 
 			/* allocate workspace with default parameters */
 			w = gsl_multifit_nlinear_alloc(T, &fdf_params, n, p);
 
-			/* initialize solver with starting point and weights */
-			gsl_multifit_nlinear_winit(&xx.vector, &wts.vector, &fdf, w);
+			/* initialize solver with starting point and weights */	
+			gsl_multifit_nlinear_init(&xx.vector, &fdf, w);
 
 			/* compute initial cost function */
 			f = gsl_multifit_nlinear_residual(w);
@@ -322,32 +313,25 @@ namespace numa {
 
 			gsl_multifit_nlinear_free(w);
 			gsl_matrix_free(covar);
-			gsl_rng_free(r);
 
 			return variables;
 		}
 
-		void exponential(const std::vector<double>& x, const std::vector<double>& y, double& b, double& lambda, double& A)
+		std::vector<double> exponential(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> init_params)
 		{
-			Params params = { exp_f, exp_df, 3, {1.0, 1.0, 0.0} };
+			assert(init_params.size() == 3);
 
-			std::vector<double> vars = non_linear_fitting(x, y, params);
+			Params params = { exp_f, exp_df, 3, init_params };
+			return non_linear_fitting(x, y, params);
 
-			b = vars[2];
-			lambda = vars[1];
-			A = vars[0];
 		}
 
-
-		void sinus(const std::vector<double>& x, const std::vector<double>& y, double& phi, double& omega, double& A)
+		std::vector<double> sinus(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> init_params)
 		{
-			Params params = { sin_f, sin_df, 3, {1.0, 1.0, 0.0} };
+			assert(init_params.size() == 3); 
 
-			std::vector<double> vars = non_linear_fitting(x, y, params);
-
-			phi = vars[2];
-			omega = vars[1];
-			A = vars[0];
+			Params params = { sin_f, sin_df, 3, init_params };
+			return  non_linear_fitting(x, y, params);
 		}
 
 
