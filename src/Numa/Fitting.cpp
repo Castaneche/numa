@@ -146,22 +146,25 @@ namespace numa {
 			return r;
 		}*/
 
-		void linear(const std::vector<double>& x, const std::vector<double>& y, double* c0, double* c1, std::string& result)
+		std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y, std::string& result)
 		{
+			std::vector<double> variables(2);
 
 			double cov00, cov01, cov11, sumsq;
-			int r = gsl_fit_linear(&x[0], 1, &y[0], 1, x.size(), c0, c1, &cov00, &cov01, &cov11, &sumsq);
+			int r = gsl_fit_linear(&x[0], 1, &y[0], 1, x.size(), &variables[0], &variables[1], &cov00, &cov01, &cov11, &sumsq);
 			double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
 			result
-				= " Y = " + std::to_string(*c0) + " + " + std::to_string(*c1) + " X\n"
+				= " Y = " + std::to_string(variables[0]) + " + " + std::to_string(variables[1]) + " X\n"
 				+ " cov00 : " + std::to_string(cov00) + "\n"
 				+ " cov01 : " + std::to_string(cov01) + "\n"
 				+ " cov11 : " + std::to_string(cov11) + "\n"
 				+ " sumsq : " + std::to_string(sumsq) + "\n"
 				+ " correlation : " + std::to_string(correlation) + "\n";
+
+			return variables;
 		}
 
-		void polynomial(std::vector<double>& x, std::vector<double>& y, double& c0, double& c1, double& c2, std::string& result)
+		std::vector<double> polynomial(std::vector<double>& x, std::vector<double>& y,std::string& result)
 		{
 			//variables
 			int n;
@@ -193,12 +196,14 @@ namespace numa {
 			int r = gsl_multifit_linear(X, Y, C, cov, &chisq, work);
 			gsl_multifit_linear_free(work);
 
-			//extract params
-			c0 = gsl_vector_get(C, 0);
-			c1 = gsl_vector_get(C, 1);
-			c2 = gsl_vector_get(C, 2);
+			std::vector<double> variables(3);
 
-			result = " Y = " + std::to_string(c0) + " + " + std::to_string(c1) + " X + " + std::to_string(c2) + " X^2\n";
+			//extract params
+			variables[0] = gsl_vector_get(C, 0);
+			variables[1] = gsl_vector_get(C, 1);
+			variables[2] = gsl_vector_get(C, 2);
+
+			result = " Y = " + std::to_string(variables[0]) + " + " + std::to_string(variables[1]) + " X + " + std::to_string(variables[2]) + " X^2\n";
 
 
 			/*printf("[ %+.5e, %+.5e, %+.5e  \n",
@@ -215,6 +220,8 @@ namespace numa {
 			//gsl_vector_free(w);
 			gsl_vector_free(C);
 			gsl_matrix_free(cov);
+
+			return variables;
 		}
 
 		static struct Params {

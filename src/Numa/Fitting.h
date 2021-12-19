@@ -11,11 +11,13 @@
 namespace numa {
     namespace fit {
         
-        //Model : y(x) = c0 + x * c1
-        void linear(const std::vector<double>& x, const std::vector<double>& y, double* c0, double* c1, std::string& result);
+        //Model : y(x) = c0 * x + c1
+        //Return vector of adjusted parameters {c0, c1}
+        std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y, std::string& result);
 
-        //Model : y(x) = c0 + x * c1 + x^2 * c2
-        void polynomial(const std::vector<double>& x, const std::vector<double>& y, double& c0, double& c1, double& c2, std::string& result);
+        //Model : y(x) = c0 * x^2 + c1 * x + c3
+        //Return vector of adjusted parameters {c0, c1, c2}
+        std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, std::string& result);
 
         /*Model: y(t) = A * exp(-lambda * t) + b
         * Parameter's order: { A, lambda, b }
