@@ -4,3 +4,4 @@
 #include "Numa/Derivative.h"
 #include "Numa/Integral.h"
 #include "Numa/FFT.h"
+#include "Numa/Common.h"
