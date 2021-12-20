@@ -164,7 +164,7 @@ namespace numa {
 			return variables;
 		}
 
-		std::vector<double> polynomial(std::vector<double>& x, std::vector<double>& y,std::string& result)
+		std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, std::string& result)
 		{
 			//variables
 			int n;
@@ -199,11 +199,11 @@ namespace numa {
 			std::vector<double> variables(3);
 
 			//extract params
-			variables[0] = gsl_vector_get(C, 0);
+			variables[2] = gsl_vector_get(C, 0);
 			variables[1] = gsl_vector_get(C, 1);
-			variables[2] = gsl_vector_get(C, 2);
+			variables[0] = gsl_vector_get(C, 2);
 
-			result = " Y = " + std::to_string(variables[0]) + " + " + std::to_string(variables[1]) + " X + " + std::to_string(variables[2]) + " X^2\n";
+			result = " Y = " + std::to_string(variables[0]) + "X^2 + " + std::to_string(variables[1]) + " X + " + std::to_string(variables[2]) + "\n";
 
 
 			/*printf("[ %+.5e, %+.5e, %+.5e  \n",
