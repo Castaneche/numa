@@ -48,10 +48,10 @@ namespace numa {
 			//The real transform outputs halfcomplex
 			//The real part is extracted using i*2 as index
 			for (int i = 0; i < nby2; i++) {
-				data.y[i] = std::abs(ydata[i * 2]) / double(n);
+				data.y[i] = std::abs(data.y[i * 2]) / double(n);
 			}
 			//Now the array is half filled with real coefficient, we don't need the other half of the array. 
-			data.y.erase(ydata.begin() + nby2, ydata.end());
+			data.y.erase(data.y.begin() + nby2, data.y.end());
 
 			gsl_fft_real_wavetable_free(real);
 			gsl_fft_halfcomplex_wavetable_free(hc);
