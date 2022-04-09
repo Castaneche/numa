@@ -151,10 +151,10 @@ namespace numa {
 			std::vector<double> variables(2);
 
 			double cov00, cov01, cov11, sumsq;
-			int r = gsl_fit_linear(&x[0], 1, &y[0], 1, x.size(), &variables[0], &variables[1], &cov00, &cov01, &cov11, &sumsq);
+			int r = gsl_fit_linear(&x[0], 1, &y[0], 1, x.size(), &variables[1], &variables[0], &cov00, &cov01, &cov11, &sumsq);
 			double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
 			result
-				= " Y = " + std::to_string(variables[0]) + " + " + std::to_string(variables[1]) + " X\n"
+				= " Y = " + std::to_string(variables[1]) + " + " + std::to_string(variables[0]) + " X\n"
 				+ " cov00 : " + std::to_string(cov00) + "\n"
 				+ " cov01 : " + std::to_string(cov01) + "\n"
 				+ " cov11 : " + std::to_string(cov11) + "\n"
