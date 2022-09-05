@@ -235,7 +235,7 @@ namespace numa {
 		};
 
 		//Return an array filled with adjusted parameters
-		std::vector<double> non_linear_fitting(const std::vector<double>& x, const std::vector<double>& y, Params& params)
+		std::vector<double> non_linear_fitting(const std::vector<double>& x, const std::vector<double>& y, Params& params, NonLinearVerbose* verbose)
 		{
 			std::vector<double> variables; //Array of adjusted parameters. It will be returned at the end
 
@@ -289,31 +289,56 @@ namespace numa {
 
 #define FIT(i) gsl_vector_get(w->x, i)
 #define ERR(i) sqrt(gsl_matrix_get(covar,i,i))
+			
+			if (verbose != nullptr) {
+				verbose->clear();
 
-			fprintf(stderr, "summary from method '%s/%s'\n",
-				gsl_multifit_nlinear_name(w),
-				gsl_multifit_nlinear_trs_name(w));
-			fprintf(stderr, "number of iterations: %zu\n",
-				gsl_multifit_nlinear_niter(w));
-			fprintf(stderr, "function evaluations: %zu\n", fdf.nevalf);
-			fprintf(stderr, "Jacobian evaluations: %zu\n", fdf.nevaldf);
-			fprintf(stderr, "reason for stopping: %s\n",
-				(info == 1) ? "small step size" : "small gradient");
-			fprintf(stderr, "initial |f(x)| = %f\n", sqrt(chisq0));
-			fprintf(stderr, "final   |f(x)| = %f\n", sqrt(chisq));
+				verbose->name = gsl_multifit_nlinear_name(w);
+				verbose->trsname = gsl_multifit_nlinear_trs_name(w);
+				verbose->niter = gsl_multifit_nlinear_niter(w);
+				verbose->nevalf = fdf.nevalf;
+				verbose->nevaldf = fdf.nevaldf;
+				verbose->info = info;
+				verbose->chisq0 = chisq0;
+				verbose->chisq = chisq;
 
-			{
 				double dof = n - p;
+				verbose->dof = dof;
+
 				double c = GSL_MAX_DBL(1, sqrt(chisq / dof));
 
-				fprintf(stderr, "chisq/dof = %g\n", chisq / dof);
+				for (unsigned int k = 0; k < params.p; k++) {
+					verbose->vars.push_back(FIT(k));
+					verbose->errs.push_back(c * ERR(k));
+				}
 
-				fprintf(stderr, "variable 1 = %.5f +/- %.5f\n", FIT(0), c * ERR(0));
-				fprintf(stderr, "variable 2 = %.5f +/- %.5f\n", FIT(1), c * ERR(1));
-				fprintf(stderr, "variable 3 = %.5f +/- %.5f\n", FIT(2), c * ERR(2));
+				verbose->status = gsl_strerror(status);
+
+				fprintf(stderr, "summary from method '%s/%s'\n",
+					gsl_multifit_nlinear_name(w),
+					gsl_multifit_nlinear_trs_name(w));
+				fprintf(stderr, "number of iterations: %zu\n",
+					gsl_multifit_nlinear_niter(w));
+				fprintf(stderr, "function evaluations: %zu\n", fdf.nevalf);
+				fprintf(stderr, "Jacobian evaluations: %zu\n", fdf.nevaldf);
+				fprintf(stderr, "reason for stopping: %s\n",
+					(info == 1) ? "small step size" : "small gradient");
+				fprintf(stderr, "initial |f(x)| = %f\n", sqrt(chisq0));
+				fprintf(stderr, "final   |f(x)| = %f\n", sqrt(chisq));
+
+				{
+
+					
+
+					fprintf(stderr, "chisq/dof = %g\n", chisq / dof);
+
+					fprintf(stderr, "variable 1 = %.5f +/- %.5f\n", FIT(0), c * ERR(0));
+					fprintf(stderr, "variable 2 = %.5f +/- %.5f\n", FIT(1), c * ERR(1));
+					fprintf(stderr, "variable 3 = %.5f +/- %.5f\n", FIT(2), c * ERR(2));
+				}
+
+				fprintf(stderr, "status = %s\n", gsl_strerror(status));
 			}
-
-			fprintf(stderr, "status = %s\n", gsl_strerror(status));
 
 			for(unsigned int k = 0; k < params.p; k++)
 				variables.push_back(FIT(k));
@@ -324,22 +349,120 @@ namespace numa {
 			return variables;
 		}
 
-		std::vector<double> exponential(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> init_params)
+		std::vector<double> exponential(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> init_params, NonLinearVerbose* verbose)
 		{
 			assert(init_params.size() == 3);
 
 			Params params = { exp_f, exp_df, 3, init_params };
-			return non_linear_fitting(x, y, params);
+			return non_linear_fitting(x, y, params, verbose);
 
 		}
 
-		std::vector<double> sinus(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> init_params)
+		std::vector<double> sinus(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> init_params, NonLinearVerbose* verbose)
 		{
 			assert(init_params.size() == 3); 
 
 			Params params = { sin_f, sin_df, 3, init_params };
-			return  non_linear_fitting(x, y, params);
+			return  non_linear_fitting(x, y, params, verbose);
 		}
+
+
+
+
+
+
+
+
+
+		std::vector<double> internal_solve_system(gsl_vector* initial_params, gsl_multifit_nlinear_fdf* fdf,
+			gsl_multifit_nlinear_parameters* params, NonLinearVerbose* verbose)
+		{
+			// This specifies a trust region method
+			const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
+			const size_t max_iter = 200;
+			const double xtol = 1.0e-8;
+			const double gtol = 1.0e-8;
+			const double ftol = 1.0e-8;
+			double chisq0, chisq;
+			gsl_vector* f;
+
+			auto* work = gsl_multifit_nlinear_alloc(T, params, fdf->n, fdf->p);
+			int info;
+
+			// initialize solver
+			gsl_multifit_nlinear_init(initial_params, fdf, work);
+
+			/* compute initial cost function */
+			f = gsl_multifit_nlinear_residual(work);
+			gsl_blas_ddot(f, f, &chisq0);
+
+			//iterate until convergence
+			int status = gsl_multifit_nlinear_driver(max_iter, xtol, gtol, ftol, nullptr, nullptr, &info, work);
+
+			// result will be stored here
+			gsl_vector* y = gsl_multifit_nlinear_position(work);
+			auto result = std::vector<double>(initial_params->size);
+
+			for (int i = 0; i < result.size(); i++)
+			{
+				result[i] = gsl_vector_get(y, i);
+			}
+
+			auto niter = gsl_multifit_nlinear_niter(work);
+			auto nfev = fdf->nevalf;
+			auto njev = fdf->nevaldf;
+			auto naev = fdf->nevalfvv;
+
+			/* covariance matrix*/
+			gsl_matrix* J = gsl_multifit_nlinear_jac(work);
+			gsl_matrix* covar = gsl_matrix_alloc(result.size(), result.size());
+			gsl_multifit_nlinear_covar(J, 0.0, covar);
+
+			/* compute final cost */
+			gsl_blas_ddot(f, f, &chisq);
+
+#define FIT(i) gsl_vector_get(y, i)
+#define ERR(i) sqrt(gsl_matrix_get(covar,i,i))
+
+			if (verbose != nullptr) {
+				verbose->clear();
+
+				verbose->name = gsl_multifit_nlinear_name(work);
+				verbose->trsname = gsl_multifit_nlinear_trs_name(work);
+				verbose->niter = gsl_multifit_nlinear_niter(work);
+				verbose->nevalf = fdf->nevalf;
+				verbose->nevaldf = fdf->nevaldf;
+				verbose->info = info;
+				verbose->chisq0 = chisq0;
+				verbose->chisq = chisq;
+
+				//double dof = n - result.size();
+				//verbose->dof = dof;
+
+				//double c = GSL_MAX_DBL(1, sqrt(chisq / dof));
+
+				for (unsigned int k = 0; k < result.size(); k++) {
+					verbose->vars.push_back(result[k]);
+					//verbose->errs.push_back(c * ERR(k));
+				}
+
+				verbose->status = gsl_strerror(status);
+
+			}
+
+			// nfev - number of function evaluations
+			// njev - number of Jacobian evaluations
+			// naev - number of f_vv evaluations
+			//logger::debug("curve fitted after ", niter, " iterations {nfev = ", nfev, "} {njev = ", njev, "} {naev = ", naev, "}");
+
+			gsl_multifit_nlinear_free(work);
+			gsl_vector_free(initial_params);
+			return result;
+		}
+
+
+
+
 
 
 } //fit namespace
