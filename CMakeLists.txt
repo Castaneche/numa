@@ -8,6 +8,11 @@ SET(GSL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/gsl-2.5.0")
 find_package(GSL REQUIRED)
 message(STATUS "[GSL] Done.")
 
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 #Create numa library
 add_library(numa)
 add_subdirectory(src/Numa) #add sources files
