@@ -164,6 +164,23 @@ namespace numa {
 			return variables;
 		}
 
+		std::vector<double> linear_mul(const std::vector<double>& x, const std::vector<double>& y, std::string& result)
+		{
+			std::vector<double> variables(1);
+
+			double cov00, cov01, cov11, sumsq;
+			int r = gsl_fit_mul(&x[0], 1, &y[0], 1, x.size(), &variables[0], &cov11, &sumsq);
+			double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
+			result
+				= " Y = " + std::to_string(variables[0]) + " X\n"
+				+ " cov11 : " + std::to_string(cov11) + "\n"
+				+ " sumsq : " + std::to_string(sumsq) + "\n"
+				+ " correlation : " + std::to_string(correlation) + "\n";
+
+			return variables;
+		}
+
+
 		std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, std::string& result)
 		{
 			//variables
@@ -213,6 +230,67 @@ namespace numa {
 			printf("  %+.5e, %+.5e, %+.5e ]\n",
 				COV(2, 0), COV(2, 1), COV(2, 2));
 			printf("# chisq = %g\n", chisq);*/
+
+			//clean
+			gsl_matrix_free(X);
+			gsl_vector_free(Y);
+			//gsl_vector_free(w);
+			gsl_vector_free(C);
+			gsl_matrix_free(cov);
+
+			return variables;
+		}
+
+		std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, unsigned int degree, std::vector<double> params, std::vector<bool> locks)
+		{
+			assert(locks.size() > degree);
+			//variables
+			int n;
+			double chisq;
+			gsl_matrix* X, * cov;
+			gsl_vector* Y, * W, * C;
+
+			unsigned int p = degree + 1;
+
+			//init
+			n = x.size();
+			X = gsl_matrix_alloc(n, p);
+			Y = gsl_vector_alloc(n);
+			C = gsl_vector_alloc(p);
+			cov = gsl_matrix_alloc(p, p);
+
+			//fill matrices and vectors
+			for (int i = 0; i < n; i++)
+			{
+				for (int k = 0; k < p; k++) {
+					unsigned int reverse_index = p - (k + 1);
+					double xx = 1.0;
+					for (int j = 0; j < k; j++)
+						xx *= x[i];
+
+					double f = 0.0;
+					if (locks[reverse_index] == false)
+						f = xx;
+					else
+						f = xx * params[p - (k + 1)]; 
+					gsl_matrix_set(X, i, k, f);
+				}
+
+				gsl_vector_set(Y, i, y[i]);
+				//gsl_vector_set(w, i, 1.0 / (ei * ei));
+			}
+
+			//run fitting algorithm
+			gsl_multifit_linear_workspace* work
+				= gsl_multifit_linear_alloc(n, p);
+			int r = gsl_multifit_linear(X, Y, C, cov, &chisq, work);
+			gsl_multifit_linear_free(work);
+
+			std::vector<double> variables(p);
+
+			//extract params
+			for (unsigned int i = 0; i < p; i++)
+				variables[p - (i + 1)] = gsl_vector_get(C, i);
 
 			//clean
 			gsl_matrix_free(X);

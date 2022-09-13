@@ -68,9 +68,18 @@ namespace numa {
         //Return vector of adjusted parameters {c0, c1}
         std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y, std::string& result);
 
+        //Model : y(x) = c0 * x
+        //Return vector of adjusted parameters {c0}
+        std::vector<double> linear_mul(const std::vector<double>& x, const std::vector<double>& y, std::string& result);
+
         //Model : y(x) = c0 * x^2 + c1 * x + c3
         //Return vector of adjusted parameters {c0, c1, c2}
         std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, std::string& result);
+        //Model : polynomial of degree 'degree'
+        //params is the list of initial parameter values, used when a param is locked
+        //coefficient adjustement can be excluded by setting the corresponding locks[i] true
+        //Return vector of adjusted parameters
+        std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, unsigned int degree, std::vector<double> params, std::vector<bool> locks);
 
         /*Model: y(t) = A * exp(-lambda * t) + b
         * Parameter's order: { A, lambda, b }
