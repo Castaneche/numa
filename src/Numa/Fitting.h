@@ -67,10 +67,12 @@ namespace numa {
         //Model : y(x) = c0 * x + c1
         //Return vector of adjusted parameters {c0, c1}
         std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y, std::string& result);
+        std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, std::string& result);
 
         //Model : y(x) = c0 * x
         //Return vector of adjusted parameters {c0}
         std::vector<double> linear_mul(const std::vector<double>& x, const std::vector<double>& y, std::string& result);
+        std::vector<double> linear_mul(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, std::string& result);
 
         //Model : y(x) = c0 * x^2 + c1 * x + c3
         //Return vector of adjusted parameters {c0, c1, c2}
