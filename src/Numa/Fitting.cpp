@@ -302,6 +302,73 @@ namespace numa {
 			return variables;
 		}
 
+		std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, unsigned int degree, std::vector<double> params, std::vector<bool> locks)
+		{
+			assert(locks.size() > degree);
+			assert(x.size() == y.size());
+			assert(y.size() == err.size());
+			//variables
+			int n;
+			double chisq;
+			gsl_matrix* X, * cov;
+			gsl_vector* Y, * W, * C;
+
+			unsigned int p = degree + 1;
+
+			//init
+			n = x.size();
+			X = gsl_matrix_alloc(n, p);
+			Y = gsl_vector_alloc(n);
+			W = gsl_vector_alloc(n);
+			C = gsl_vector_alloc(p);
+			cov = gsl_matrix_alloc(p, p);
+
+			//fill matrices and vectors
+			for (int i = 0; i < n; i++)
+			{
+				for (int k = 0; k < p; k++) {
+					unsigned int reverse_index = p - (k + 1);
+					double xx = 1.0;
+					for (int j = 0; j < k; j++)
+						xx *= x[i];
+
+					double f = 0.0;
+					if (locks[reverse_index] == false)
+						f = xx;
+					else
+						f = xx * params[p - (k + 1)];
+					gsl_matrix_set(X, i, k, f);
+				}
+
+				gsl_vector_set(Y, i, y[i]);
+				if(err[i] == 0)
+					gsl_vector_set(W, i, 1.0);
+				else
+					gsl_vector_set(W, i, 1.0 / (err[i] * err[i]));
+			}
+
+			//run fitting algorithm
+			gsl_multifit_linear_workspace* work
+				= gsl_multifit_linear_alloc(n, p);
+			int r = gsl_multifit_wlinear(X, W, Y, C, cov, &chisq, work);
+			gsl_multifit_linear_free(work);
+
+			std::vector<double> variables(p);
+
+			//extract params
+			for (unsigned int i = 0; i < p; i++)
+				variables[p - (i + 1)] = gsl_vector_get(C, i);
+
+			//clean
+			gsl_matrix_free(X);
+			gsl_vector_free(Y);
+			gsl_vector_free(W);
+			gsl_vector_free(C);
+			gsl_matrix_free(cov);
+
+			return variables;
+		}
+
 		static struct Params {
 			int (*f) (const gsl_vector* x, void* params, gsl_vector* f);
 			int (*df) (const gsl_vector* x, void* params, gsl_matrix* df);/* set to NULL for finite-difference Jacobian */

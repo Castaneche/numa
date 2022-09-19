@@ -80,6 +80,7 @@ namespace numa {
         //coefficient adjustement can be excluded by setting the corresponding locks[i] true
         //Return vector of adjusted parameters
         std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, unsigned int degree, std::vector<double> params, std::vector<bool> locks);
+        std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, unsigned int degree, std::vector<double> params, std::vector<bool> locks);
 
         /*Model: y(t) = A * exp(-lambda * t) + b
         * Parameter's order: { A, lambda, b }
