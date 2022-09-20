@@ -9,6 +9,7 @@ target_sources(
     Common.h
 
     PRIVATE
+    Fitting_internal.h
     Fitting.cpp
     Derivative.cpp
     Integral.cpp

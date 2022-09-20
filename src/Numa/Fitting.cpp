@@ -15,651 +15,200 @@
 
 namespace numa {
 
-	namespace fit {
+	Fitter::Fitter() {
 
-		static int exp_f(const gsl_vector* x, void* params, gsl_vector* f)
+	}
+	Fitter::~Fitter() {
+
+	}
+
+	std::vector<double> Fitter::GetWeightsFromErrors(const std::vector<double>& err) {
+		std::vector<double> weights;
+		for (double e : err) {
+			if (e != 0)
+				weights.push_back(1.0 / (e * e));
+			else
+				weights.push_back(1.0);
+		}
+		return weights;
+	}
+
+	std::string Fitter::GetLinearOuputString(const double& cov00, const double& cov01, const double& cov11, const double& sumsq, const double& correlation) {
+		return 
+			" cov00 : " + std::to_string(cov00) + "\n"
+			+ " cov01 : " + std::to_string(cov01) + "\n"
+			+ " cov11 : " + std::to_string(cov11) + "\n"
+			+ " sumsq : " + std::to_string(sumsq) + "\n"
+			+ " correlation : " + std::to_string(correlation) + "\n";
+	}
+	std::string Fitter::GetLinearMulOuputString(const double& cov11, const double& sumsq, const double& correlation) {
+		return 
+			" cov11 : " + std::to_string(cov11) + "\n"
+			+ " sumsq : " + std::to_string(sumsq) + "\n"
+			+ " correlation : " + std::to_string(correlation) + "\n";
+	}
+
+	std::vector<double> Fitter::linear(const std::vector<double>& x, const std::vector<double>& y)
+	{
+		std::vector<double> variables(2);
+
+		double cov00, cov01, cov11, sumsq;
+		int r = gsl_fit_linear(&x[0], 1, &y[0], 1, x.size(), &variables[0], &variables[1], &cov00, &cov01, &cov11, &sumsq);
+		double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
+		_output
+			= " Y = " + std::to_string(variables[0]) + " + " + std::to_string(variables[1]) + " X\n"
+			+ GetLinearOuputString(cov00, cov01, cov11, sumsq, correlation);
+
+		return variables;
+	}
+
+	std::vector<double> Fitter::linear(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err)
+	{
+		std::vector<double> variables(2);
+
+		std::vector<double> weights = GetWeightsFromErrors(err);
+
+		double cov00, cov01, cov11, sumsq;
+		int r = gsl_fit_wlinear(&x[0], 1, &weights[0], 1, &y[0], 1, x.size(), &variables[0], &variables[1], &cov00, &cov01, &cov11, &sumsq);
+		double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
+		_output
+			= " Y = " + std::to_string(variables[0]) + " + " + std::to_string(variables[1]) + " X\n"
+			+ GetLinearOuputString(cov00, cov01, cov11, sumsq, correlation);
+
+		return variables;
+	}
+
+	double Fitter::linear_mul(const std::vector<double>& x, const std::vector<double>& y)
+	{
+		double var = 0.0;
+
+		double cov00, cov01, cov11, sumsq;
+		int r = gsl_fit_mul(&x[0], 1, &y[0], 1, x.size(), &var, &cov11, &sumsq);
+		double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
+		_output
+			= " Y = " + std::to_string(var) + " X\n"
+			+ GetLinearMulOuputString(cov11, sumsq, correlation);
+
+		return var;
+	}
+	double Fitter::linear_mul(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err)
+	{
+		double var = 0.0;
+
+		std::vector<double> weights = GetWeightsFromErrors(err);
+
+		double cov00, cov01, cov11, sumsq;
+		int r = gsl_fit_wmul(&x[0], 1, &weights[0], 1, &y[0], 1, x.size(), &var, &cov11, &sumsq);
+		double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
+		_output
+			= " Y = " + std::to_string(var) + " X\n"
+			+ " cov11 : " + std::to_string(cov11) + "\n"
+			+ " sumsq : " + std::to_string(sumsq) + "\n"
+			+ " correlation : " + std::to_string(correlation) + "\n";
+
+		return var;
+	}
+
+	std::string Fitter::GetPolynomialOuputString(const std::vector<double>& variables) {
+		std::string out = "Y = " + std::to_string(variables[0]) + " + " + std::to_string(variables[1]) + " X";
+		for (unsigned int i = 2; i < variables.size(); i++)
+			out += " + " + std::to_string(variables[i]) + " X^" + std::to_string(i);
+		return out;
+	}
+
+
+	
+
+	std::vector<double> Fitter::internal_solve_system(gsl_vector* initial_params, gsl_multifit_nlinear_fdf* fdf,
+		gsl_multifit_nlinear_parameters* params)
+	{
+		// This specifies a trust region method
+		const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
+		const size_t max_iter = 200;
+		const double xtol = 1.0e-8;
+		const double gtol = 1.0e-8;
+		const double ftol = 1.0e-8;
+		double chisq0, chisq;
+		gsl_vector* f;
+
+		auto* work = gsl_multifit_nlinear_alloc(T, params, fdf->n, fdf->p);
+		int info;
+
+		// initialize solver
+		gsl_multifit_nlinear_init(initial_params, fdf, work);
+
+		/* compute initial cost function */
+		f = gsl_multifit_nlinear_residual(work);
+		gsl_blas_ddot(f, f, &chisq0);
+
+		//iterate until convergence
+		int status = gsl_multifit_nlinear_driver(max_iter, xtol, gtol, ftol, nullptr, nullptr, &info, work);
+
+		// result will be stored here
+		gsl_vector* y = gsl_multifit_nlinear_position(work);
+		auto result = std::vector<double>(initial_params->size);
+
+		for (int i = 0; i < result.size(); i++)
 		{
-			auto data = (struct Data*)params;
-
-			double A = gsl_vector_get(x, 0);
-			double lambda = gsl_vector_get(x, 1);
-			double b = gsl_vector_get(x, 2);
-
-			size_t i;
-
-			for (i = 0; i < data->x.size(); i++)
-			{
-				/* Model Yi = A * exp(-lambda * t_i) + b */
-				double Yi = A * exp(-lambda * data->x[i]) + b;
-				gsl_vector_set(f, i, Yi - data->y[i]);
-			}
-
-			return GSL_SUCCESS;
+			result[i] = gsl_vector_get(y, i);
 		}
 
-		static int	exp_df(const gsl_vector* x, void* params, gsl_matrix* J)
-		{
-			auto data = (struct Data*)params;
-
-			double A = gsl_vector_get(x, 0);
-			double lambda = gsl_vector_get(x, 1);
-
-			size_t i;
-
-			for (i = 0; i < data->x.size(); i++)
-			{
-				/* Jacobian matrix J(i,j) = dfi / dxj, */
-				/* where fi = (Yi - yi)/sigma[i],      */
-				/*       Yi = A * exp(-lambda * t_i) + b  */
-				/* and the xj are the parameters (A,lambda,b) */
-				double e = exp(-lambda * data->x[i]);
-				gsl_matrix_set(J, i, 0, e);
-				gsl_matrix_set(J, i, 1, -data->x[i] * A * e);
-				gsl_matrix_set(J, i, 2, 1.0);
-			}
-
-			return GSL_SUCCESS;
-		}
-
-
-		static int sin_f(const gsl_vector* x, void* params, gsl_vector* f)
-		{
-			auto data = (struct Data*)params;
-
-			double A = gsl_vector_get(x, 0);
-			double omega = gsl_vector_get(x, 1);
-			double phi = gsl_vector_get(x, 2);
-
-			size_t i;
-
-			for (i = 0; i < data->x.size(); i++)
-			{
-				// Model Yi = A * sin(omega * t_i + phi) 
-				double Yi = A * sin(omega * data->x[i] + phi);
-				gsl_vector_set(f, i, Yi - data->y[i]);
-			}
-
-			return GSL_SUCCESS;
-		}
-
-		static int sin_df(const gsl_vector* x, void* params, gsl_matrix* J)
-		{
-			auto data = (struct Data*)params;
-
-			double A = gsl_vector_get(x, 0);
-			double omega = gsl_vector_get(x, 1);
-			double phi = gsl_vector_get(x, 2);
-
-			size_t i;
-
-			for (i = 0; i < data->x.size(); i++)
-			{
-				/* Jacobian matrix J(i,j) = dfi / dxj, */
-				/* where fi = (Yi - yi)/sigma[i],      */
-				/*       Yi = A * sin(omega * t_i + phi)  */
-				/* and the xj are the parameters (A,omega,phi) */
-				gsl_matrix_set(J, i, 0, sin(omega * data->x[i]));
-				gsl_matrix_set(J, i, 1, A * data->x[i] * cos(omega * data->x[i] + phi));
-				gsl_matrix_set(J, i, 2, A * cos(omega * data->x[i] + phi));
-			}
-
-			return GSL_SUCCESS;
-		}
-
-
-		// ==============================================================================
-
-		static void callback(const size_t iter, void* params, const gsl_multifit_nlinear_workspace* w)
-		{
-			gsl_vector* f = gsl_multifit_nlinear_residual(w);
-			gsl_vector* x = gsl_multifit_nlinear_position(w);
-			double rcond;
-
-			/* compute reciprocal condition number of J(x) */
-			gsl_multifit_nlinear_rcond(&rcond, w);
-
-			fprintf(stderr, "iter %2zu: x1 = %.4f, x2 = %.4f, x3 = %.4f, cond(J) = %8.4f, |f(x)| = %.4f\n",
-				iter,
-				gsl_vector_get(x, 0),
-				gsl_vector_get(x, 1),
-				gsl_vector_get(x, 2),
-				1.0 / rcond,
-				gsl_blas_dnrm2(f));
-		}
-
-
-		// ==============================================================================
-
-
-		/*int linear(const double* x, const size_t xstride, const double* y, const size_t ystride, const size_t n, double* c0, double* c1, double* cov00, double* cov01, double* cov11, double* sumsq, std::string& result)
-		{
-			int r = gsl_fit_linear(x, xstride, y, ystride, n, c0, c1, cov00, cov01, cov11, sumsq);
-			double correlation = gsl_stats_correlation(x, xstride, y, ystride, n);
-			result
-				= " Y = " + std::to_string(*c0) + " + " + std::to_string(*c1) + " X\n"
-				+ " cov00 : " + std::to_string(*cov00) + "\n"
-				+ " cov01 : " + std::to_string(*cov01) + "\n"
-				+ " cov11 : " + std::to_string(*cov11) + "\n"
-				+ " sumsq : " + std::to_string(*sumsq) + "\n"
-				+ " correlation : " + std::to_string(correlation) + "\n";
-
-			return r;
-		}*/
-
-		std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y, std::string& result)
-		{
-			std::vector<double> variables(2);
-
-
-			double cov00, cov01, cov11, sumsq;
-			int r = gsl_fit_linear(&x[0], 1, &y[0], 1, x.size(), &variables[1], &variables[0], &cov00, &cov01, &cov11, &sumsq);
-			double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
-			result
-				= " Y = " + std::to_string(variables[1]) + " + " + std::to_string(variables[0]) + " X\n"
-				+ " cov00 : " + std::to_string(cov00) + "\n"
-				+ " cov01 : " + std::to_string(cov01) + "\n"
-				+ " cov11 : " + std::to_string(cov11) + "\n"
-				+ " sumsq : " + std::to_string(sumsq) + "\n"
-				+ " correlation : " + std::to_string(correlation) + "\n";
-
-			return variables;
-		}
-
-		std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, std::string& result)
-		{
-			std::vector<double> variables(2);
-
-			std::vector<double> weights;
-			for (double e : err) {
-				if (e != 0)
-					weights.push_back(1.0 / (e * e));
-				else
-					weights.push_back(1.0);
-			}
-
-			double cov00, cov01, cov11, sumsq;
-			int r = gsl_fit_wlinear(&x[0], 1, &weights[0], 1, &y[0], 1, x.size(), &variables[1], &variables[0], &cov00, &cov01, &cov11, &sumsq);
-			double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
-			result
-				= " Y = " + std::to_string(variables[1]) + " + " + std::to_string(variables[0]) + " X\n"
-				+ " cov00 : " + std::to_string(cov00) + "\n"
-				+ " cov01 : " + std::to_string(cov01) + "\n"
-				+ " cov11 : " + std::to_string(cov11) + "\n"
-				+ " sumsq : " + std::to_string(sumsq) + "\n"
-				+ " correlation : " + std::to_string(correlation) + "\n";
-
-			return variables;
-		}
-
-		std::vector<double> linear_mul(const std::vector<double>& x, const std::vector<double>& y, std::string& result)
-		{
-			std::vector<double> variables(1);
-
-			double cov00, cov01, cov11, sumsq;
-			int r = gsl_fit_mul(&x[0], 1, &y[0], 1, x.size(), &variables[0], &cov11, &sumsq);
-			double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
-			result
-				= " Y = " + std::to_string(variables[0]) + " X\n"
-				+ " cov11 : " + std::to_string(cov11) + "\n"
-				+ " sumsq : " + std::to_string(sumsq) + "\n"
-				+ " correlation : " + std::to_string(correlation) + "\n";
-
-			return variables;
-		}
-		std::vector<double> linear_mul(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, std::string& result)
-		{
-			std::vector<double> variables(1);
-
-			std::vector<double> weights;
-			for (double e : err) {
-				if (e != 0)
-					weights.push_back(1.0 / (e * e));
-				else
-					weights.push_back(1.0);
-			}
-
-			double cov00, cov01, cov11, sumsq;
-			int r = gsl_fit_wmul(&x[0], 1, &weights[0], 1, &y[0], 1, x.size(), &variables[0], &cov11, &sumsq);
-			double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
-			result
-				= " Y = " + std::to_string(variables[0]) + " X\n"
-				+ " cov11 : " + std::to_string(cov11) + "\n"
-				+ " sumsq : " + std::to_string(sumsq) + "\n"
-				+ " correlation : " + std::to_string(correlation) + "\n";
-
-			return variables;
-		}
-
-
-		std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, std::string& result)
-		{
-			//variables
-			int n;
-			double chisq;
-			gsl_matrix* X, * cov;
-			gsl_vector* Y, * W, * C;
-
-			//init
-			n = x.size();
-			X = gsl_matrix_alloc(n, 3);
-			Y = gsl_vector_alloc(n);
-			C = gsl_vector_alloc(3);
-			cov = gsl_matrix_alloc(3, 3);
-
-			//fill matrices and vectors
-			for (int i = 0; i < n; i++)
-			{
-				gsl_matrix_set(X, i, 0, 1.0);
-				gsl_matrix_set(X, i, 1, x[i]);
-				gsl_matrix_set(X, i, 2, x[i] * x[i]);
-
-				gsl_vector_set(Y, i, y[i]);
-				//gsl_vector_set(w, i, 1.0 / (ei * ei));
-			}
-
-			//run fitting algorithm
-			gsl_multifit_linear_workspace* work
-				= gsl_multifit_linear_alloc(n, 3);
-			int r = gsl_multifit_linear(X, Y, C, cov, &chisq, work);
-			gsl_multifit_linear_free(work);
-
-			std::vector<double> variables(3);
-
-			//extract params
-			variables[2] = gsl_vector_get(C, 0);
-			variables[1] = gsl_vector_get(C, 1);
-			variables[0] = gsl_vector_get(C, 2);
-
-			result = " Y = " + std::to_string(variables[0]) + "X^2 + " + std::to_string(variables[1]) + " X + " + std::to_string(variables[2]) + "\n";
-
-
-			/*printf("[ %+.5e, %+.5e, %+.5e  \n",
-				COV(0, 0), COV(0, 1), COV(0, 2));
-			printf("  %+.5e, %+.5e, %+.5e  \n",
-				COV(1, 0), COV(1, 1), COV(1, 2));
-			printf("  %+.5e, %+.5e, %+.5e ]\n",
-				COV(2, 0), COV(2, 1), COV(2, 2));
-			printf("# chisq = %g\n", chisq);*/
-
-			//clean
-			gsl_matrix_free(X);
-			gsl_vector_free(Y);
-			//gsl_vector_free(w);
-			gsl_vector_free(C);
-			gsl_matrix_free(cov);
-
-			return variables;
-		}
-
-		std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, unsigned int degree, std::vector<double> params, std::vector<bool> locks)
-		{
-			assert(locks.size() > degree);
-			//variables
-			int n;
-			double chisq;
-			gsl_matrix* X, * cov;
-			gsl_vector* Y, * W, * C;
-
-			unsigned int p = degree + 1;
-
-			//init
-			n = x.size();
-			X = gsl_matrix_alloc(n, p);
-			Y = gsl_vector_alloc(n);
-			C = gsl_vector_alloc(p);
-			cov = gsl_matrix_alloc(p, p);
-
-			//fill matrices and vectors
-			for (int i = 0; i < n; i++)
-			{
-				for (int k = 0; k < p; k++) {
-					unsigned int reverse_index = p - (k + 1);
-					double xx = 1.0;
-					for (int j = 0; j < k; j++)
-						xx *= x[i];
-
-					double f = 0.0;
-					if (locks[reverse_index] == false)
-						f = xx;
-					else
-						f = xx * params[p - (k + 1)]; 
-					gsl_matrix_set(X, i, k, f);
-				}
-
-				gsl_vector_set(Y, i, y[i]);
-				//gsl_vector_set(w, i, 1.0 / (ei * ei));
-			}
-
-			//run fitting algorithm
-			gsl_multifit_linear_workspace* work
-				= gsl_multifit_linear_alloc(n, p);
-			int r = gsl_multifit_linear(X, Y, C, cov, &chisq, work);
-			gsl_multifit_linear_free(work);
-
-			std::vector<double> variables(p);
-
-			//extract params
-			for (unsigned int i = 0; i < p; i++)
-				variables[p - (i + 1)] = gsl_vector_get(C, i);
-
-			//clean
-			gsl_matrix_free(X);
-			gsl_vector_free(Y);
-			//gsl_vector_free(w);
-			gsl_vector_free(C);
-			gsl_matrix_free(cov);
-
-			return variables;
-		}
-
-		std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, unsigned int degree, std::vector<double> params, std::vector<bool> locks)
-		{
-			assert(locks.size() > degree);
-			assert(x.size() == y.size());
-			assert(y.size() == err.size());
-			//variables
-			int n;
-			double chisq;
-			gsl_matrix* X, * cov;
-			gsl_vector* Y, * W, * C;
-
-			unsigned int p = degree + 1;
-
-			//init
-			n = x.size();
-			X = gsl_matrix_alloc(n, p);
-			Y = gsl_vector_alloc(n);
-			W = gsl_vector_alloc(n);
-			C = gsl_vector_alloc(p);
-			cov = gsl_matrix_alloc(p, p);
-
-			//fill matrices and vectors
-			for (int i = 0; i < n; i++)
-			{
-				for (int k = 0; k < p; k++) {
-					unsigned int reverse_index = p - (k + 1);
-					double xx = 1.0;
-					for (int j = 0; j < k; j++)
-						xx *= x[i];
-
-					double f = 0.0;
-					if (locks[reverse_index] == false)
-						f = xx;
-					else
-						f = xx * params[p - (k + 1)];
-					gsl_matrix_set(X, i, k, f);
-				}
-
-				gsl_vector_set(Y, i, y[i]);
-				if(err[i] == 0)
-					gsl_vector_set(W, i, 1.0);
-				else
-					gsl_vector_set(W, i, 1.0 / (err[i] * err[i]));
-			}
-
-			//run fitting algorithm
-			gsl_multifit_linear_workspace* work
-				= gsl_multifit_linear_alloc(n, p);
-			int r = gsl_multifit_wlinear(X, W, Y, C, cov, &chisq, work);
-			gsl_multifit_linear_free(work);
-
-			std::vector<double> variables(p);
-
-			//extract params
-			for (unsigned int i = 0; i < p; i++)
-				variables[p - (i + 1)] = gsl_vector_get(C, i);
-
-			//clean
-			gsl_matrix_free(X);
-			gsl_vector_free(Y);
-			gsl_vector_free(W);
-			gsl_vector_free(C);
-			gsl_matrix_free(cov);
-
-			return variables;
-		}
-
-		static struct Params {
-			int (*f) (const gsl_vector* x, void* params, gsl_vector* f);
-			int (*df) (const gsl_vector* x, void* params, gsl_matrix* df);/* set to NULL for finite-difference Jacobian */
-			int p; //number of parameters of the fitting function
-			std::vector<double> startvalues; 
-			double xtol = 1e-8;
-			double gtol = 1e-8;
-			double ftol = 1e-8;
-		};
-
-		//Return an array filled with adjusted parameters
-		std::vector<double> non_linear_fitting(const std::vector<double>& x, const std::vector<double>& y, Params& params, NonLinearVerbose* verbose)
-		{
-			std::vector<double> variables; //Array of adjusted parameters. It will be returned at the end
-
-			const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
-			gsl_multifit_nlinear_workspace* w;
-			gsl_multifit_nlinear_fdf fdf = gsl_multifit_nlinear_fdf();
-			gsl_multifit_nlinear_parameters fdf_params = gsl_multifit_nlinear_default_parameters();
-			const size_t n = y.size();
-			const size_t p = params.p;
-
-			gsl_vector* f;
-			gsl_matrix* J;
-			gsl_matrix* covar = gsl_matrix_alloc(p, p);
-
-			struct Data data = { x, y };
-			gsl_vector_view xx = gsl_vector_view_array(params.startvalues.data(), p);
-			double chisq, chisq0;
-			int status, info;
-			size_t i;
-
-			/* define the function to be minimized */
-			fdf.f = params.f;
-			fdf.df = params.df;   /* set to NULL for finite-difference Jacobian */
-			fdf.fvv = NULL;     /* not using geodesic acceleration */
-			fdf.n = n;
-			fdf.p = p;
-			fdf.params = &data;
-
-			//We do not use weights here because all points are equally weighted
-
-			/* allocate workspace with default parameters */
-			w = gsl_multifit_nlinear_alloc(T, &fdf_params, n, p);
-
-			/* initialize solver with starting point and weights */	
-			gsl_multifit_nlinear_init(&xx.vector, &fdf, w);
-
-			/* compute initial cost function */
-			f = gsl_multifit_nlinear_residual(w);
-			gsl_blas_ddot(f, f, &chisq0);
-
-			/* solve the system with a maximum of 100 iterations */
-			status = gsl_multifit_nlinear_driver(100, params.xtol, params.xtol, params.xtol,
-				callback, NULL, &info, w);
-
-			/* compute covariance of best fit parameters */
-			J = gsl_multifit_nlinear_jac(w);
-			gsl_multifit_nlinear_covar(J, 0.0, covar);
-
-			/* compute final cost */
-			gsl_blas_ddot(f, f, &chisq);
-
-#define FIT(i) gsl_vector_get(w->x, i)
-#define ERR(i) sqrt(gsl_matrix_get(covar,i,i))
-			
-			if (verbose != nullptr) {
-				verbose->clear();
-
-				verbose->name = gsl_multifit_nlinear_name(w);
-				verbose->trsname = gsl_multifit_nlinear_trs_name(w);
-				verbose->niter = gsl_multifit_nlinear_niter(w);
-				verbose->nevalf = fdf.nevalf;
-				verbose->nevaldf = fdf.nevaldf;
-				verbose->info = info;
-				verbose->chisq0 = chisq0;
-				verbose->chisq = chisq;
-
-				double dof = n - p;
-				verbose->dof = dof;
-
-				double c = GSL_MAX_DBL(1, sqrt(chisq / dof));
-
-				for (unsigned int k = 0; k < params.p; k++) {
-					verbose->vars.push_back(FIT(k));
-					verbose->errs.push_back(c * ERR(k));
-				}
-
-				verbose->status = gsl_strerror(status);
-
-				fprintf(stderr, "summary from method '%s/%s'\n",
-					gsl_multifit_nlinear_name(w),
-					gsl_multifit_nlinear_trs_name(w));
-				fprintf(stderr, "number of iterations: %zu\n",
-					gsl_multifit_nlinear_niter(w));
-				fprintf(stderr, "function evaluations: %zu\n", fdf.nevalf);
-				fprintf(stderr, "Jacobian evaluations: %zu\n", fdf.nevaldf);
-				fprintf(stderr, "reason for stopping: %s\n",
-					(info == 1) ? "small step size" : "small gradient");
-				fprintf(stderr, "initial |f(x)| = %f\n", sqrt(chisq0));
-				fprintf(stderr, "final   |f(x)| = %f\n", sqrt(chisq));
-
-				{
-
-					
-
-					fprintf(stderr, "chisq/dof = %g\n", chisq / dof);
-
-					fprintf(stderr, "variable 1 = %.5f +/- %.5f\n", FIT(0), c * ERR(0));
-					fprintf(stderr, "variable 2 = %.5f +/- %.5f\n", FIT(1), c * ERR(1));
-					fprintf(stderr, "variable 3 = %.5f +/- %.5f\n", FIT(2), c * ERR(2));
-				}
-
-				fprintf(stderr, "status = %s\n", gsl_strerror(status));
-			}
-
-			for(unsigned int k = 0; k < params.p; k++)
-				variables.push_back(FIT(k));
-
-			gsl_multifit_nlinear_free(w);
-			gsl_matrix_free(covar);
-
-			return variables;
-		}
-
-		std::vector<double> exponential(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> init_params, NonLinearVerbose* verbose)
-		{
-			assert(init_params.size() == 3);
-
-			Params params = { exp_f, exp_df, 3, init_params };
-			return non_linear_fitting(x, y, params, verbose);
-
-		}
-
-		std::vector<double> sinus(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> init_params, NonLinearVerbose* verbose)
-		{
-			assert(init_params.size() == 3); 
-
-			Params params = { sin_f, sin_df, 3, init_params };
-			return  non_linear_fitting(x, y, params, verbose);
-		}
-
-
-
-
-
-
-
-
-
-		std::vector<double> internal_solve_system(gsl_vector* initial_params, gsl_multifit_nlinear_fdf* fdf,
-			gsl_multifit_nlinear_parameters* params, NonLinearVerbose* verbose)
-		{
-			// This specifies a trust region method
-			const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
-			const size_t max_iter = 200;
-			const double xtol = 1.0e-8;
-			const double gtol = 1.0e-8;
-			const double ftol = 1.0e-8;
-			double chisq0, chisq;
-			gsl_vector* f;
-
-			auto* work = gsl_multifit_nlinear_alloc(T, params, fdf->n, fdf->p);
-			int info;
-
-			// initialize solver
-			gsl_multifit_nlinear_init(initial_params, fdf, work);
-
-			/* compute initial cost function */
-			f = gsl_multifit_nlinear_residual(work);
-			gsl_blas_ddot(f, f, &chisq0);
-
-			//iterate until convergence
-			int status = gsl_multifit_nlinear_driver(max_iter, xtol, gtol, ftol, nullptr, nullptr, &info, work);
-
-			// result will be stored here
-			gsl_vector* y = gsl_multifit_nlinear_position(work);
-			auto result = std::vector<double>(initial_params->size);
-
-			for (int i = 0; i < result.size(); i++)
-			{
-				result[i] = gsl_vector_get(y, i);
-			}
-
-			auto niter = gsl_multifit_nlinear_niter(work);
-			auto nfev = fdf->nevalf;
-			auto njev = fdf->nevaldf;
-			auto naev = fdf->nevalfvv;
-
-			/* covariance matrix*/
-			gsl_matrix* J = gsl_multifit_nlinear_jac(work);
-			gsl_matrix* covar = gsl_matrix_alloc(result.size(), result.size());
-			gsl_multifit_nlinear_covar(J, 0.0, covar);
-
-			/* compute final cost */
-			gsl_blas_ddot(f, f, &chisq);
+		auto niter = gsl_multifit_nlinear_niter(work);
+		auto nfev = fdf->nevalf;
+		auto njev = fdf->nevaldf;
+		auto naev = fdf->nevalfvv;
+
+		/* covariance matrix*/
+		gsl_matrix* J = gsl_multifit_nlinear_jac(work);
+		gsl_matrix* covar = gsl_matrix_alloc(result.size(), result.size());
+		gsl_multifit_nlinear_covar(J, 0.0, covar);
+
+		/* compute final cost */
+		gsl_blas_ddot(f, f, &chisq);
 
 #define FIT(i) gsl_vector_get(y, i)
 #define ERR(i) sqrt(gsl_matrix_get(covar,i,i))
 
-			if (verbose != nullptr) {
-				verbose->clear();
+		_nonLinearVerbose.clear();
 
-				verbose->name = gsl_multifit_nlinear_name(work);
-				verbose->trsname = gsl_multifit_nlinear_trs_name(work);
-				verbose->niter = gsl_multifit_nlinear_niter(work);
-				verbose->nevalf = fdf->nevalf;
-				verbose->nevaldf = fdf->nevaldf;
-				verbose->info = info;
-				verbose->chisq0 = chisq0;
-				verbose->chisq = chisq;
+		_nonLinearVerbose.name = gsl_multifit_nlinear_name(work);
+		_nonLinearVerbose.trsname = gsl_multifit_nlinear_trs_name(work);
+		_nonLinearVerbose.niter = gsl_multifit_nlinear_niter(work);
+		_nonLinearVerbose.nevalf = fdf->nevalf;
+		_nonLinearVerbose.nevaldf = fdf->nevaldf;
+		_nonLinearVerbose.info = info;
+		_nonLinearVerbose.chisq0 = chisq0;
+		_nonLinearVerbose.chisq = chisq;
 
-				//double dof = n - result.size();
-				//verbose->dof = dof;
+		//double dof = n - result.size();
+		//verbose->dof = dof;
 
-				//double c = GSL_MAX_DBL(1, sqrt(chisq / dof));
+		//double c = GSL_MAX_DBL(1, sqrt(chisq / dof));
 
-				for (unsigned int k = 0; k < result.size(); k++) {
-					verbose->vars.push_back(result[k]);
-					//verbose->errs.push_back(c * ERR(k));
-				}
-
-				verbose->status = gsl_strerror(status);
-
-			}
-
-			// nfev - number of function evaluations
-			// njev - number of Jacobian evaluations
-			// naev - number of f_vv evaluations
-			//logger::debug("curve fitted after ", niter, " iterations {nfev = ", nfev, "} {njev = ", njev, "} {naev = ", naev, "}");
-
-			gsl_multifit_nlinear_free(work);
-			gsl_vector_free(initial_params);
-			return result;
+		for (unsigned int k = 0; k < result.size(); k++) {
+			_nonLinearVerbose.vars.push_back(result[k]);
+			//verbose->errs.push_back(c * ERR(k));
 		}
 
+		_nonLinearVerbose.status = gsl_strerror(status);
+		_output = _nonLinearVerbose.to_string();
+
+		// nfev - number of function evaluations
+		// njev - number of Jacobian evaluations
+		// naev - number of f_vv evaluations
+		//logger::debug("curve fitted after ", niter, " iterations {nfev = ", nfev, "} {njev = ", njev, "} {naev = ", naev, "}");
+
+		gsl_multifit_nlinear_free(work);
+		gsl_vector_free(initial_params);
+		return result;
+	}
 
 
 
+	std::string Fitter::GetOutput() {
+		return _output;
+	}
 
 
-} //fit namespace
 }//numa namespace
 

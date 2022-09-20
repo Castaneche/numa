@@ -5,6 +5,15 @@
 #include <string>
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_vector.h>
+#include <gsl/gsl_fit.h>
+#include <gsl/gsl_multifit.h>
+#include <gsl/gsl_statistics.h>
+
+#include <gsl/gsl_rng.h>
+#include <gsl/gsl_randist.h>
+#include <gsl/gsl_matrix.h>
+#include <gsl/gsl_vector.h>
+#include <gsl/gsl_blas.h>
 #include <gsl/gsl_multifit_nlinear.h>
 
 #include <vector>
@@ -12,239 +21,378 @@
 #include <cassert>
 #include <functional>
 
+#include "Fitting_internal.h"
+
 namespace numa {
-    namespace fit {
 
-        struct NonLinearVerbose {
-            std::string name;
-            std::string trsname;
-            size_t niter;
-            size_t nevalf;
-            size_t nevaldf;
-            int info;
-            double chisq0;
-            double chisq;
-            double dof;
-            std::vector<double> vars;
-            std::vector<double> errs;
-            std::string status;
+    struct NonLinearVerbose {
+        std::string name;
+        std::string trsname;
+        size_t niter;
+        size_t nevalf;
+        size_t nevaldf;
+        int info;
+        double chisq0;
+        double chisq;
+        double dof;
+        std::vector<double> vars;
+        std::vector<double> errs;
+        std::string status;
 
-            void clear() {
-                name = "";
-                trsname = "";
-                niter = 0;
-                nevalf = 0;
-                nevaldf = 0;
-                info = 0;
-                chisq0 = 0;
-                chisq = 0;
-                dof = 0;
-                vars.clear();
-                errs.clear();
-                status = "";
-            }
+        void clear() {
+            name = "";
+            trsname = "";
+            niter = 0;
+            nevalf = 0;
+            nevaldf = 0;
+            info = 0;
+            chisq0 = 0;
+            chisq = 0;
+            dof = 0;
+            vars.clear();
+            errs.clear();
+            status = "";
+        }
 
-            std::string to_string() {
-                std::string result = "";
-                result += "summary from method" + name + "/" + trsname + '\n';
-                result += "number of iterations: " + std::to_string(niter) + '\n';
-                result += "function evaluations: " + std::to_string(nevalf) + '\n';
-                result += "Jacobian evaluations: " + std::to_string(nevaldf) + '\n';
-                result += "reason for stopping: " + (info == 1) ? "small step size" : "small gradient";
-                result += '\n';
-                result += "initial |f(x)| = " + std::to_string(chisq0) + '\n';
-                result += "final | f(x) | = " + std::to_string(chisq) + '\n';
-                
-                for (unsigned int i = 0; i < vars.size(); i++)
-                    result += "variable " + std::to_string(i) + " = " + std::to_string(vars[i]) + '\n';
+        std::string to_string() {
+            std::string result = "";
+            result += "summary from method" + name + "/" + trsname + '\n';
+            result += "number of iterations: " + std::to_string(niter) + '\n';
+            result += "function evaluations: " + std::to_string(nevalf) + '\n';
+            result += "Jacobian evaluations: " + std::to_string(nevaldf) + '\n';
+            result += "reason for stopping: " + (info == 1) ? "small step size" : "small gradient";
+            result += '\n';
+            result += "initial |f(x)| = " + std::to_string(chisq0) + '\n';
+            result += "final | f(x) | = " + std::to_string(chisq) + '\n';
 
-                result += "status = " + status + '\n';
+            for (unsigned int i = 0; i < vars.size(); i++)
+                result += "variable " + std::to_string(i) + " = " + std::to_string(vars[i]) + '\n';
 
-                return result;
-            }
-        };
-        
-        //Model : y(x) = c0 * x + c1
-        //Return vector of adjusted parameters {c0, c1}
-        std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y, std::string& result);
-        std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, std::string& result);
+            result += "status = " + status + '\n';
 
-        //Model : y(x) = c0 * x
-        //Return vector of adjusted parameters {c0}
-        std::vector<double> linear_mul(const std::vector<double>& x, const std::vector<double>& y, std::string& result);
-        std::vector<double> linear_mul(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, std::string& result);
-
-        //Model : y(x) = c0 * x^2 + c1 * x + c3
-        //Return vector of adjusted parameters {c0, c1, c2}
-        std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, std::string& result);
-        //Model : polynomial of degree 'degree'
-        //params is the list of initial parameter values, used when a param is locked
-        //coefficient adjustement can be excluded by setting the corresponding locks[i] true
-        //Return vector of adjusted parameters
-        std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, unsigned int degree, std::vector<double> params, std::vector<bool> locks);
-        std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, unsigned int degree, std::vector<double> params, std::vector<bool> locks);
-
-        /*Model: y(t) = A * exp(-lambda * t) + b
-        * Parameter's order: { A, lambda, b }
-        * Return: vector of the 3 adjusted parameters
-        * */
-        std::vector<double> exponential(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> init_params = { 1.0, 1.0, 0.0}, NonLinearVerbose* verbose = nullptr);
-
-        /*Model : y(t) = A * sin(omega * t + phi)
-        * Parameter's order: { A, omega, phi }
-        * Return: vector of the 3 adjusted parameters
-        * */
-        std::vector<double> sinus(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> init_params = { 1.0, 1.0, 0.0 }, NonLinearVerbose* verbose = nullptr);
+            return result;
+        }
+    };
 
 
+    class Fitter {
+    public:
+        Fitter();
+        ~Fitter();
+
+        /**
+        * Performs a linear fit on dataset (x,y)
+        * Model : Y = c0 + c1*X
+        * 
+        * @param x data
+        * @param y data, must be same size as x
+        * @return vector of adjusted parameters { c0, c1 }
+        */
+        std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y);
+        /**
+        * Performs a linear fit on dataset (x,y)
+        * Model : Y = c0 + c1*X
+        *
+        * @param x vector of x data
+        * @param y vector of y data, must be same size as x
+        * @param err vector of error (standard deviation) on y values, must be same size as y
+        * @return vector of adjusted parameters { c0, c1 }
+        */
+        std::vector<double> linear(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err);
+
+        /**
+        * Performs a linear fit without constant term on dataset (x,y)
+        * Model : Y = c*X
+        *
+        * @param x data
+        * @param y data, must be same size as x
+        * @return the adjusted parameter c
+        */
+        double linear_mul(const std::vector<double>& x, const std::vector<double>& y);
+        /**
+        * Performs a linear fit without constant term on dataset (x,y)
+        * Model : Y = c*X
+        * 
+        * @param x vector of x data
+        * @param y vector of y data, must be same size as x
+        * @param err vector of error (standard deviation) on y values, must be same size as y
+        * @return the adjusted parameter c
+        */
+        double linear_mul(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err);
 
 
+        /**
+        * Performs a polynomial fit of degree (n-1)
+        * Model : c0 + c1*X + c2*X^2 + ... + cn*X^(n-1)
+        *
+        * @param n is automatically determined by the number of initial parameters you fed into the function
+        * @param x vector of x data
+        * @param y vector of y data, must be same size as x
+        * @param initial_params array of initial values of the parameters
+        * @param ignore_params array of boolean, ignore_params[i] = true means we don't fit the i'th parameter
+        * @return vector of adjusted parameters { c0, c1, c2, ..., cn}
+        */
+        template<auto n>
+        std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, const std::array<double, n>& initial_params, const std::array<bool, n>& ignore_params);
+            
+        /**
+        * Performs a polynomial fit of degree (n-1)
+        * Model : c0 + c1*X + c2*X^2 + ... + cn*X^(n-1)
+        *
+        * @param n is automatically determined by the number of initial parameters you fed into the function
+        * @param x vector of x data
+        * @param y vector of y data, must be same size as x
+        * @param err vector of error (standard deviation) on y values, must be same size as y
+        * @param initial_params array of initial values of the parameters
+        * @param ignore_params array of boolean, ignore_params[i] = true means we don't fit the i'th parameter
+        * @return vector of adjusted parameters { c0, c1, c2, ..., cn}
+        */
+        template<auto n>
+        std::vector<double> polynomial(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, const std::array<double, n>& initial_params, const std::array<bool, n>& ignore_params);
+
+        /**
+        * Performs a non-linear least-squares fit.
+        *
+        * @param f a function of type double (double x, double c1, double c2, ..., double cn)
+        * where  c1, ..., cn are the coefficients to be fitted.
+        * @param initial_params intial guess for the parameters. The size of the array must to
+        * be equal to the number of coefficients to be fitted.
+        * @param x the idependent data.
+        * @param y the dependent data, must to have the same size as x.
+        * @return std::vector<double> with the computed coefficients
+        */
+        template<typename Callable, auto n>
+        std::vector<double> non_linear_fit(Callable f, const std::array<double, n>& initial_params, const std::vector<double>& x, const std::vector<double>& y);
+
+
+        std::string GetOutput();
+
+    private:
+        /* Linear internal functions */
+
+        //Transform array of standard deviation errors to array of weights for fitting functions of the gsl library
+        std::vector<double> GetWeightsFromErrors(const std::vector<double>& err);
+
+        //Contains output string formated for linear fitting
+        std::string GetLinearOuputString(const double& cov00, const double& cov01, const double& cov11, const double& sumsq, const double& correlation);
+        std::string GetLinearMulOuputString(const double& cov11, const double& sumsq, const double& correlation);
+
+        //Contains output string formated for polynomial fitting
+        std::string GetPolynomialOuputString(const std::vector<double>& variables);
+
+    private:
+        /* Non Linear internal functions */
 
         /*
         Following code is a slightly modified version of this repo https://github.com/Eleobert/gsl-curve-fit
         His work is under GPL-3.0 licence
         */
-
-
         // For information about non-linear least-squares fit with gsl
         // see https://www.gnu.org/software/gsl/doc/html/nls.html
 
-        template <class R, class... ARGS>
-        struct function_ripper {
-            static constexpr size_t n_args = sizeof...(ARGS);
-        };
 
-        /**
-         * This function returns the number of parameters of a given function.This
-         * overload is to be used specialy with lambdas.
-         */
-        template <class R, class... ARGS>
-        auto constexpr n_params(std::function<R(ARGS...)>)
-        {
-            return function_ripper<R, ARGS...>();
-        }
-
-        /**
-         * This function returns the number of parameters of a given function.
-         */
-        template <class R, class... ARGS>
-        auto constexpr n_params(R(ARGS...))
-        {
-            return function_ripper<R, ARGS...>();
-        }
-
-        template <typename F, size_t... Is>
-        auto gen_tuple_impl(F func, std::index_sequence<Is...>)
-        {
-            return std::make_tuple(func(Is)...);
-        }
-
-        template <size_t N, typename F>
-        auto gen_tuple(F func)
-        {
-            return gen_tuple_impl(func, std::make_index_sequence<N>{});
-        }
+        std::vector<double> internal_solve_system(gsl_vector* initial_params, gsl_multifit_nlinear_fdf* fdf, gsl_multifit_nlinear_parameters* params);
 
         template<typename C1>
-        struct fit_data
+        std::vector<double> curve_fit_impl(func_f_type f, func_df_type df, func_fvv_type fvv, gsl_vector* initial_params, fit_data<C1>& fd);
+
+    private:
+        /* private helpers */
+
+        //Reset members, used at the start of every fitting functions
+        void ResetState();
+    private:
+        /* Members */
+        std::string _output;
+
+        NonLinearVerbose _nonLinearVerbose;
+    };
+
+
+    template<auto n>
+    inline std::vector<double> Fitter::polynomial(const std::vector<double>& x, const std::vector<double>& y, const std::array<double, n>& initial_params, const std::array<bool, n>& ignore_params)
+    {
+        assert(x.size() == y.size());
+
+        //variables
+        int N;
+        double chisq;
+        gsl_matrix* X, * cov;
+        gsl_vector* Y, * W, * C;
+
+        unsigned int p = n;
+
+        //init
+        N = x.size();
+        X = gsl_matrix_alloc(N, p);
+        Y = gsl_vector_alloc(N);
+        C = gsl_vector_alloc(p);
+        cov = gsl_matrix_alloc(p, p);
+
+        //fill matrices and vectors
+        for (int i = 0; i < N; i++)
         {
-            const std::vector<double>& t;
-            const std::vector<double>& y;
-            // the actual function to be fitted
-            C1 f;
-        };
+            for (int k = 0; k < p; k++) {
+                double xx = 1.0;
+                for (int j = 0; j < k; j++)
+                    xx *= x[i];
 
-
-        template<typename FitData, int n_params>
-        int internal_f(const gsl_vector* x, void* params, gsl_vector* f)
-        {
-            auto* d = static_cast<FitData*>(params);
-            // Convert the parameter values from gsl_vector (in x) into std::tuple
-            auto init_args = [x](int index)
-            {
-                return gsl_vector_get(x, index);
-            };
-            auto parameters = gen_tuple<n_params>(init_args);
-
-            // Calculate the error for each...
-            for (size_t i = 0; i < d->t.size(); ++i)
-            {
-                double ti = d->t[i];
-                double yi = d->y[i];
-                auto func = [ti, &d](auto ...xs)
-                {
-                    // call the actual function to be fitted
-                    return d->f(ti, xs...);
-                };
-                auto y = std::apply(func, parameters);
-                gsl_vector_set(f, i, yi - y);
+                double f = 0.0;
+                if (ignore_params[k] == false)
+                    f = xx;
+                else
+                    f = 0.0; // xx * initial_params[k]; Don't know what to put in here 
+                gsl_matrix_set(X, i, k, f);
             }
-            return GSL_SUCCESS;
+
+            gsl_vector_set(Y, i, y[i]);
         }
 
-        using func_f_type = int (*) (const gsl_vector*, void*, gsl_vector*);
-        using func_df_type = int (*) (const gsl_vector*, void*, gsl_matrix*);
-        using func_fvv_type = int (*) (const gsl_vector*, const gsl_vector*, void*, gsl_vector*);
+        //run fitting algorithm
+        gsl_multifit_linear_workspace* work
+            = gsl_multifit_linear_alloc(N, p);
+        int r = gsl_multifit_linear(X, Y, C, cov, &chisq, work);
+        gsl_multifit_linear_free(work);
 
-        template<auto n>
-        gsl_vector* internal_make_gsl_vector_ptr(const std::array<double, n>& vec) {
-            auto* result = gsl_vector_alloc(n);
-            int i = 0;
-            for (const auto e : vec)
-            {
-                gsl_vector_set(result, i, e);
-                i++;
-            }
-            return result;
+        std::vector<double> variables(p);
+
+        //extract params
+        for (unsigned int i = 0; i < p; i++) {
+            if (ignore_params[i] == false)
+                variables[i] = gsl_vector_get(C, i);
+            else
+                variables[i] = initial_params[i];
         }
 
-        auto internal_solve_system(gsl_vector* initial_params, gsl_multifit_nlinear_fdf* fdf,
-            gsl_multifit_nlinear_parameters* params,
-            NonLinearVerbose* verbose = nullptr)-> std::vector<double>;
+        _output = GetPolynomialOuputString(variables);
 
-        template<typename C1>
-        std::vector<double> curve_fit_impl(func_f_type f, func_df_type df, func_fvv_type fvv, gsl_vector* initial_params, fit_data<C1>& fd, NonLinearVerbose* verbose = nullptr)
-        {
-            assert(fd.t.size() == fd.y.size());
+        //clean
+        gsl_matrix_free(X);
+        gsl_vector_free(Y);
+        gsl_vector_free(C);
+        gsl_matrix_free(cov);
 
-            auto fdf = gsl_multifit_nlinear_fdf();
-            auto fdf_params = gsl_multifit_nlinear_default_parameters();
-
-            fdf.f = f;
-            fdf.df = df;
-            fdf.fvv = fvv;
-            fdf.n = fd.t.size();
-            fdf.p = initial_params->size;
-            fdf.params = &fd;
-
-            // "This selects the Levenberg-Marquardt algorithm with geodesic acceleration."
-            fdf_params.trs = gsl_multifit_nlinear_trs_lmaccel;
-            return internal_solve_system(initial_params, &fdf, &fdf_params, verbose);
-        }
-
-
-        /**
-         * Performs a non-linear least-squares fit.
-         *
-         * @param f a function of type double (double x, double c1, double c2, ..., double cn)
-         * where  c1, ..., cn are the coefficients to be fitted.
-         * @param initial_params intial guess for the parameters. The size of the array must to
-         * be equal to the number of coefficients to be fitted.
-         * @param x the idependent data.
-         * @param y the dependent data, must to have the same size as x.
-         * @return std::vector<double> with the computed coefficients
-         */
-        template<typename Callable, auto n>
-        std::vector<double> curve_fit(Callable f, const std::array<double, n>& initial_params, const std::vector<double>& x, const std::vector<double>& y, NonLinearVerbose* verbose = nullptr)
-        {
-            // We can't pass lambdas without convert to std::function.
-            //constexpr auto n = decltype(n_params(std::function(f)))::n_args - 1;
-            //assert(initial_params.size() == n);
-
-            auto params = internal_make_gsl_vector_ptr(initial_params);
-            auto fd = fit_data<Callable>{ x, y, f };
-            return curve_fit_impl(internal_f<decltype(fd), n>, nullptr, nullptr, params, fd, verbose);
-        }
-
+        return variables;
     }
+
+    template<auto n>
+    inline std::vector<double> Fitter::polynomial(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err, const std::array<double, n>& initial_params, const std::array<bool, n>& ignore_params)
+    {
+        assert(x.size() == y.size());
+        assert(y.size() == err.size());
+
+        //variables
+        int N;
+        double chisq;
+        gsl_matrix* X, * cov;
+        gsl_vector* Y, * W, * C;
+
+        unsigned int p = n;
+
+        //init
+        N = x.size();
+        X = gsl_matrix_alloc(N, p);
+        Y = gsl_vector_alloc(N);
+        W = gsl_vector_alloc(N);
+        C = gsl_vector_alloc(p);
+        cov = gsl_matrix_alloc(p, p);
+
+        //fill matrices and vectors
+        for (int i = 0; i < N; i++)
+        {
+            for (int k = 0; k < p; k++) {
+                double xx = 1.0;
+                for (int j = 0; j < k; j++)
+                    xx *= x[i];
+
+                double f = 0.0;
+                if (ignore_params[k] == false)
+                    f = xx;
+                else
+                    f = 0.0; // xx * initial_params[k]; Don't know what to put in here 
+                gsl_matrix_set(X, i, k, f);
+            }
+
+            gsl_vector_set(Y, i, y[i]);
+
+            //Convert standard deviation errors to weights
+            if (err[i] == 0)
+                gsl_vector_set(W, i, 1.0);
+            else
+                gsl_vector_set(W, i, 1.0 / (err[i] * err[i]));
+        }
+
+        //run fitting algorithm
+        gsl_multifit_linear_workspace* work
+            = gsl_multifit_linear_alloc(N, p);
+        int r = gsl_multifit_wlinear(X, W, Y, C, cov, &chisq, work);
+        gsl_multifit_linear_free(work);
+
+        std::vector<double> variables(p);
+
+        //extract params
+        for (unsigned int i = 0; i < p; i++) {
+            if (ignore_params[i] == false)
+                variables[i] = gsl_vector_get(C, i);
+            else
+                variables[i] = initial_params[i];
+        }
+
+        _output = GetPolynomialOuputString(variables);
+
+        /*printf("[ %+.5e, %+.5e, %+.5e  \n",
+            COV(0, 0), COV(0, 1), COV(0, 2));
+        printf("  %+.5e, %+.5e, %+.5e  \n",
+            COV(1, 0), COV(1, 1), COV(1, 2));
+        printf("  %+.5e, %+.5e, %+.5e ]\n",
+            COV(2, 0), COV(2, 1), COV(2, 2));
+        printf("# chisq = %g\n", chisq);*/
+
+        //clean
+        gsl_matrix_free(X);
+        gsl_vector_free(Y);
+        gsl_vector_free(W);
+        gsl_vector_free(C);
+        gsl_matrix_free(cov);
+
+        return variables;
+    }
+
+
+    template<typename C1>
+    std::vector<double> Fitter::curve_fit_impl(func_f_type f, func_df_type df, func_fvv_type fvv, gsl_vector* initial_params, fit_data<C1>& fd)
+    {
+        assert(fd.t.size() == fd.y.size());
+
+        auto fdf = gsl_multifit_nlinear_fdf();
+        auto fdf_params = gsl_multifit_nlinear_default_parameters();
+
+        fdf.f = f;
+        fdf.df = df;
+        fdf.fvv = fvv;
+        fdf.n = fd.t.size();
+        fdf.p = initial_params->size;
+        fdf.params = &fd;
+
+        // "This selects the Levenberg-Marquardt algorithm with geodesic acceleration."
+        fdf_params.trs = gsl_multifit_nlinear_trs_lmaccel;
+        return internal_solve_system(initial_params, &fdf, &fdf_params);
+    }
+
+
+    template<typename Callable, auto n>
+    std::vector<double> Fitter::non_linear_fit(Callable f, const std::array<double, n>& initial_params, const std::vector<double>& x, const std::vector<double>& y)
+    {
+        // We can't pass lambdas without convert to std::function.
+        //constexpr auto n = decltype(n_params(std::function(f)))::n_args - 1;
+        //assert(initial_params.size() == n);
+
+        auto params = internal_make_gsl_vector_ptr(initial_params);
+        auto fd = fit_data<Callable>{ x, y, f };
+        return Fitter::curve_fit_impl(internal_f<decltype(fd), n>, nullptr, nullptr, params, fd);
+    }
+
+
 }
+
+
