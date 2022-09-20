@@ -164,6 +164,9 @@ namespace numa {
         template<typename Callable, auto n>
         std::vector<double> non_linear_fit(Callable f, const std::array<double, n>& initial_params, const std::vector<double>& x, const std::vector<double>& y);
 
+        template<typename Callable, auto n>
+        std::vector<double> non_linear_fit(Callable f, const std::array<double, n>& initial_params, const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>* err);
+
 
         std::string GetOutput();
 
@@ -191,7 +194,7 @@ namespace numa {
         // see https://www.gnu.org/software/gsl/doc/html/nls.html
 
 
-        std::vector<double> internal_solve_system(gsl_vector* initial_params, gsl_multifit_nlinear_fdf* fdf, gsl_multifit_nlinear_parameters* params);
+        std::vector<double> internal_solve_system(gsl_vector* initial_params, gsl_multifit_nlinear_fdf* fdf, gsl_multifit_nlinear_parameters* params, const std::vector<double>* err = nullptr);
 
         template<typename C1>
         std::vector<double> curve_fit_impl(func_f_type f, func_df_type df, func_fvv_type fvv, gsl_vector* initial_params, fit_data<C1>& fd);
@@ -376,22 +379,29 @@ namespace numa {
 
         // "This selects the Levenberg-Marquardt algorithm with geodesic acceleration."
         fdf_params.trs = gsl_multifit_nlinear_trs_lmaccel;
-        return internal_solve_system(initial_params, &fdf, &fdf_params);
+        return internal_solve_system(initial_params, &fdf, &fdf_params, fd.err);
     }
 
 
     template<typename Callable, auto n>
-    std::vector<double> Fitter::non_linear_fit(Callable f, const std::array<double, n>& initial_params, const std::vector<double>& x, const std::vector<double>& y)
+    inline std::vector<double> Fitter::non_linear_fit(Callable f, const std::array<double, n>& initial_params, const std::vector<double>& x, const std::vector<double>& y)
     {
         // We can't pass lambdas without convert to std::function.
         //constexpr auto n = decltype(n_params(std::function(f)))::n_args - 1;
         //assert(initial_params.size() == n);
 
         auto params = internal_make_gsl_vector_ptr(initial_params);
-        auto fd = fit_data<Callable>{ x, y, f };
+        auto fd = fit_data<Callable>{ x, y, nullptr, f };
         return Fitter::curve_fit_impl(internal_f<decltype(fd), n>, nullptr, nullptr, params, fd);
     }
 
+    template<typename Callable, auto n>
+    inline std::vector<double> Fitter::non_linear_fit(Callable f, const std::array<double, n>& initial_params, const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>* err)
+    {
+        auto params = internal_make_gsl_vector_ptr(initial_params);
+        auto fd = fit_data<Callable>{ x, y, err, f };
+        return Fitter::curve_fit_impl(internal_f<decltype(fd), n>, nullptr, nullptr, params, fd);
+    }
 
 }
 

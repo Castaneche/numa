@@ -13,6 +13,8 @@
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_multifit_nlinear.h>
 
+#include <iostream>
+
 namespace numa {
 
 	Fitter::Fitter() {
@@ -120,7 +122,7 @@ namespace numa {
 	
 
 	std::vector<double> Fitter::internal_solve_system(gsl_vector* initial_params, gsl_multifit_nlinear_fdf* fdf,
-		gsl_multifit_nlinear_parameters* params)
+		gsl_multifit_nlinear_parameters* params, const std::vector<double>* err)
 	{
 		// This specifies a trust region method
 		const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
@@ -135,7 +137,14 @@ namespace numa {
 		int info;
 
 		// initialize solver
-		gsl_multifit_nlinear_init(initial_params, fdf, work);
+		if (err == nullptr){
+			gsl_multifit_nlinear_init(initial_params, fdf, work);
+		}
+		else {
+			std::vector<double> weights = GetWeightsFromErrors(*err);
+			gsl_vector_view wts = gsl_vector_view_array(&weights[0], weights.size());
+			gsl_multifit_nlinear_winit(initial_params, &wts.vector, fdf, work);
+		}
 
 		/* compute initial cost function */
 		f = gsl_multifit_nlinear_residual(work);

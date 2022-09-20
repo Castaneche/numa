@@ -16,6 +16,7 @@ struct fit_data
 {
     const std::vector<double>& t;
     const std::vector<double>& y;
+    const std::vector<double>* err;
     // the actual function to be fitted
     C1 f;
 };
