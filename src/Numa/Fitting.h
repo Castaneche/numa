@@ -20,6 +20,8 @@
 #include <array>
 #include <cassert>
 #include <functional>
+#include <sstream>
+#include <iomanip>
 
 #include "Fitting_internal.h"
 
@@ -55,22 +57,22 @@ namespace numa {
         }
 
         std::string to_string() {
-            std::string result = "";
-            result += "summary from method" + name + "/" + trsname + '\n';
-            result += "number of iterations: " + std::to_string(niter) + '\n';
-            result += "function evaluations: " + std::to_string(nevalf) + '\n';
-            result += "Jacobian evaluations: " + std::to_string(nevaldf) + '\n';
-            result += "reason for stopping: " + (info == 1) ? "small step size" : "small gradient";
-            result += '\n';
-            result += "initial |f(x)| = " + std::to_string(chisq0) + '\n';
-            result += "final | f(x) | = " + std::to_string(chisq) + '\n';
+            std::stringstream ss;
+            ss << std::setprecision(16) << std::fixed
+                << "summary from method" << name << "/" << trsname << std::endl
+                << "number of iterations: " << niter << std::endl
+                << "function evaluations : " << nevalf << std::endl
+                << "Jacobian evaluations: " << nevaldf << std::endl
+                << "reason for stopping: " << ((info == 1) ? "small step size" : "small gradient") << std::endl
+                << "initial |f(x)| = " << chisq0 << std::endl
+                << "final | f(x) | = " << chisq << std::endl;
 
             for (unsigned int i = 0; i < vars.size(); i++)
-                result += "variable " + std::to_string(i) + " = " + std::to_string(vars[i]) + '\n';
+                ss << "variable " << i << " = " << vars[i] << std::endl;
 
-            result += "status = " + status + '\n';
+            ss << "status = " << status << std::endl;
 
-            return result;
+            return ss.str();
         }
     };
 
@@ -177,8 +179,8 @@ namespace numa {
         std::vector<double> GetWeightsFromErrors(const std::vector<double>& err);
 
         //Contains output string formated for linear fitting
-        std::string GetLinearOuputString(const double& cov00, const double& cov01, const double& cov11, const double& sumsq, const double& correlation);
-        std::string GetLinearMulOuputString(const double& cov11, const double& sumsq, const double& correlation);
+        std::string GetLinearOuputString(const std::vector<double>& vars, const double& cov00, const double& cov01, const double& cov11, const double& sumsq, const double& correlation);
+        std::string GetLinearMulOuputString(const double& var, const double& cov11, const double& sumsq, const double& correlation);
 
         //Contains output string formated for polynomial fitting
         std::string GetPolynomialOuputString(const std::vector<double>& variables);

@@ -35,47 +35,52 @@ namespace numa {
 		return weights;
 	}
 
-	std::string Fitter::GetLinearOuputString(const double& cov00, const double& cov01, const double& cov11, const double& sumsq, const double& correlation) {
-		return 
-			" cov00 : " + std::to_string(cov00) + "\n"
-			+ " cov01 : " + std::to_string(cov01) + "\n"
-			+ " cov11 : " + std::to_string(cov11) + "\n"
-			+ " sumsq : " + std::to_string(sumsq) + "\n"
-			+ " correlation : " + std::to_string(correlation) + "\n";
+	std::string Fitter::GetLinearOuputString(const std::vector<double>& vars, const double& cov00, const double& cov01, const double& cov11, const double& sumsq, const double& correlation) {
+		std::stringstream ss;
+		ss << std::setprecision(16) << std::fixed
+			<< " variable 1 : " << vars[0] << std::endl
+			<< " variable 2 : " << vars[1] << std::endl
+			<< " cov00 : " << cov00 << std::endl
+			<< " cov01 : " << cov01 << std::endl
+			<< " cov11 : " << cov11 << std::endl
+			<< " sumsq : " << sumsq << std::endl
+			<< " correlation : " << correlation << std::endl;
+		
+		return ss.str();
 	}
-	std::string Fitter::GetLinearMulOuputString(const double& cov11, const double& sumsq, const double& correlation) {
-		return 
-			" cov11 : " + std::to_string(cov11) + "\n"
-			+ " sumsq : " + std::to_string(sumsq) + "\n"
-			+ " correlation : " + std::to_string(correlation) + "\n";
+	std::string Fitter::GetLinearMulOuputString(const double& var, const double& cov11, const double& sumsq, const double& correlation) {
+		std::stringstream ss;
+		ss << std::setprecision(16) << std::fixed
+			<< " variable : " << var << std::endl
+			<< " cov11 : " << cov11 << std::endl
+			<< " sumsq : " << sumsq << std::endl
+			<< " correlation : " << correlation << std::endl;
+
+		return ss.str();
 	}
 
 	std::vector<double> Fitter::linear(const std::vector<double>& x, const std::vector<double>& y)
 	{
-		std::vector<double> variables(2);
+		std::vector<double> variables(2, 0.0);
 
 		double cov00, cov01, cov11, sumsq;
 		int r = gsl_fit_linear(&x[0], 1, &y[0], 1, x.size(), &variables[0], &variables[1], &cov00, &cov01, &cov11, &sumsq);
 		double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
-		_output
-			= " Y = " + std::to_string(variables[0]) + " + " + std::to_string(variables[1]) + " X\n"
-			+ GetLinearOuputString(cov00, cov01, cov11, sumsq, correlation);
+		_output = GetLinearOuputString(variables, cov00, cov01, cov11, sumsq, correlation);
 
 		return variables;
 	}
 
 	std::vector<double> Fitter::linear(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& err)
 	{
-		std::vector<double> variables(2);
+		std::vector<double> variables(2, 0.0);
 
 		std::vector<double> weights = GetWeightsFromErrors(err);
 
 		double cov00, cov01, cov11, sumsq;
 		int r = gsl_fit_wlinear(&x[0], 1, &weights[0], 1, &y[0], 1, x.size(), &variables[0], &variables[1], &cov00, &cov01, &cov11, &sumsq);
 		double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
-		_output
-			= " Y = " + std::to_string(variables[0]) + " + " + std::to_string(variables[1]) + " X\n"
-			+ GetLinearOuputString(cov00, cov01, cov11, sumsq, correlation);
+		_output = GetLinearOuputString(variables, cov00, cov01, cov11, sumsq, correlation);
 
 		return variables;
 	}
@@ -87,9 +92,7 @@ namespace numa {
 		double cov00, cov01, cov11, sumsq;
 		int r = gsl_fit_mul(&x[0], 1, &y[0], 1, x.size(), &var, &cov11, &sumsq);
 		double correlation = gsl_stats_correlation(&x[0], 1, &y[0], 1, x.size());
-		_output
-			= " Y = " + std::to_string(var) + " X\n"
-			+ GetLinearMulOuputString(cov11, sumsq, correlation);
+		_output = GetLinearMulOuputString(var, cov11, sumsq, correlation);
 
 		return var;
 	}
